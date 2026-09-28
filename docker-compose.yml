@@ -1,0 +1,91 @@
+name: plm
+
+x-app-env: &app-env
+  PLM_DATABASE_URL: postgresql+psycopg://qplm_app:${APP_DB_PASSWORD}@db:5432/qplm
+  PLM_PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8081}
+  PLM_COOKIE_SECURE: ${COOKIE_SECURE:-false}
+  PLM_ENVIRONMENT: ${PLM_ENVIRONMENT:-production}
+  PLM_SESSION_IDLE_MINUTES: ${SESSION_IDLE_MINUTES:-30}
+  PLM_MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-50}
+  PLM_LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+x-app-build: &app-build
+  context: ./backend
+  args:
+    APP_VERSION: ${PLM_VERSION:-0.3.1}
+    GIT_COMMIT: ${GIT_COMMIT:-unknown}
+    BUILD_TIME: ${BUILD_TIME:-unknown}
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: qplm
+      POSTGRES_USER: qplm_owner
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (see .env.example)}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?Set APP_DB_PASSWORD in .env (see .env.example)}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./deploy/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qplm_owner -d qplm"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [backend]
+
+  # One-shot: applies database migrations (as the schema owner) and creates default roles, then exits.
+  migrate:
+    build: *app-build
+    image: plm-api:${PLM_VERSION:-0.3.1}
+    command: ["sh", "-c", "alembic upgrade head && python -m app.cli bootstrap"]
+    environment:
+      <<: *app-env
+      PLM_MIGRATOR_DATABASE_URL: postgresql+psycopg://qplm_owner:${POSTGRES_PASSWORD}@db:5432/qplm
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+    networks: [backend]
+
+  api:
+    image: plm-api:${PLM_VERSION:-0.3.1}
+    build: *app-build
+    restart: unless-stopped
+    environment: *app-env
+    volumes:
+      - filestore:/data/filestore
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/ready', timeout=4).status == 200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks: [backend]
+
+  gateway:
+    build:
+      context: ./frontend
+    image: plm-gateway:${PLM_VERSION:-0.3.1}
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-8081}:8080"
+    volumes:
+      - ./branding:/usr/share/nginx/html/branding:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [backend, frontend]
+
+networks:
+  backend:
+    internal: true
+  frontend: {}
+
+volumes:
+  pgdata:
+  filestore:

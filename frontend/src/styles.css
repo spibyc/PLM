@@ -1,0 +1,47 @@
+:root {
+  --plm-paper: #FFFFFF;
+  --plm-ink: #192D40;
+  --plm-rule: #C7D5D9;
+  --plm-primary: #31454F;
+}
+body { background: var(--plm-paper); color: var(--plm-ink); }
+
+/* Identifiers (part numbers, lot numbers, location codes) are the thing people read off labels and
+   type into searches, so they get a distinct monospace "silkscreen" treatment everywhere. */
+.ident {
+  font-family: var(--mantine-font-family-monospace);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+.ident-lg { font-size: 1.6rem; font-weight: 600; }
+
+.lifecycle { display: flex; gap: 0; align-items: stretch; flex-wrap: wrap; }
+.lifecycle-step {
+  padding: 4px 12px; border: 1px solid var(--plm-rule); margin-right: -1px;
+  font-size: 13px; color: #566877; background: white;
+}
+.lifecycle-step[data-done="true"] { color: var(--plm-ink); }
+.lifecycle-step[data-current="true"] { background: #31454F; color: #FFFFFF; border-color: #31454F; font-weight: 600; }
+.lifecycle-step[data-bad="true"] { background: #B42318; color: white; border-color: #B42318; font-weight: 600; }
+
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 20px; font-size: 14px; }
+.kv dt { color: #566877; }
+.kv dd { margin: 0; }
+
+table tbody tr[data-href] { cursor: pointer; }
+table tbody tr[data-href]:hover { background: #F2F6F7; }
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: white; }
+}
+.label-sheet { display: flex; flex-wrap: wrap; gap: 8mm; }
+.label {
+  width: 62mm; height: 29mm; border: 1px dashed #999; display: flex; align-items: center; gap: 3mm;
+  padding: 2mm; box-sizing: border-box; background: white; overflow: hidden;
+}
+.label img { width: 25mm; height: 25mm; }
+.label .ident { font-size: 11pt; }
+.label small { font-size: 7pt; color: #333; display: block; line-height: 1.2; }
+@media print { .label { border: none; } }
