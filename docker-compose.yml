@@ -75,7 +75,7 @@ services:
     ports:
       - "${HTTP_PORT:-8081}:8080"
     volumes:
-      - ./branding:/usr/share/nginx/html/branding:ro
+      - ./branding:/usr/share/nginx/html/branding:ro,Z
     depends_on:
       api:
         condition: service_healthy
