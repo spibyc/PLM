@@ -1,6 +1,6 @@
 import { Badge, Button, Card, Group, Modal, Select, Stack, Table, Text, TextInput, Textarea, Title } from '@mantine/core';
 import { IconPlus } from '@tabler/icons-react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -10,7 +10,7 @@ const statusColor=(s:string)=>s==='Released'||s==='Approved'||s==='Received'?'gr
 
 type Supplier={id:string;code:string;name:string;risk_class:string;status:string;website?:string;notes?:string};
 export function Suppliers(){
- const {can}=useAuth(), qc=useQueryClient(); const [editing,setEditing]=useState<Supplier|null|undefined>(undefined); const [signing,setSigning]=useState<Supplier|null>(null); const [err,setErr]=useState<unknown>(null);
+ const {can}=useAuth(), qc=useQueryClient(); const [editing,setEditing]=useState<Supplier|null|undefined>(undefined); const [signing,setSigning]=useState<Supplier|null>(null); const [err]=useState<unknown>(null);
  const q=useQuery({queryKey:['suppliers'],queryFn:()=>api<Supplier[]>('/api/suppliers')});
  const change=async(s:Supplier,status:string)=>{const reason=window.prompt(`Reason for ${status.toLowerCase()}:`);if(!reason)return;try{await api(`/api/suppliers/${s.id}/status`,{body:{status,reason}});qc.invalidateQueries({queryKey:['suppliers']})}catch(e){setErr(e)}};
  return <Stack><Group justify="space-between"><div><Title order={2}>Approved suppliers</Title><Text c="dimmed">Supplier qualification state is controlled and approval is electronically signed.</Text></div><Group><Badge variant="light">Controlled purchasing</Badge>{can('supplier:write')&&<Button leftSection={<IconPlus size={16}/>} onClick={()=>setEditing(null)}>Add supplier</Button>}</Group></Group><ErrorBox error={err}/><Card withBorder>{!q.data?.length?<Empty>No suppliers yet. Add a supplier to begin qualification.</Empty>:<Table striped highlightOnHover><Table.Thead><Table.Tr><Table.Th>Code</Table.Th><Table.Th>Supplier</Table.Th><Table.Th>Risk</Table.Th><Table.Th>Status</Table.Th><Table.Th>Website</Table.Th><Table.Th>Actions</Table.Th></Table.Tr></Table.Thead><Table.Tbody>{q.data.map(x=><Table.Tr key={x.id}><Table.Td>{x.code}</Table.Td><Table.Td>{x.name}</Table.Td><Table.Td>{x.risk_class}</Table.Td><Table.Td><Badge color={statusColor(x.status)}>{x.status}</Badge></Table.Td><Table.Td>{x.website?<a href={x.website} target="_blank" rel="noreferrer">Open</a>:'—'}</Table.Td><Table.Td><Group gap="xs">{can('supplier:write')&&x.status==='Draft'&&<Button size="xs" variant="default" onClick={()=>setEditing(x)}>Edit</Button>}{can('sign:supplier_approved')&&x.status==='Draft'&&<Button size="xs" onClick={()=>setSigning(x)}>Approve</Button>}{can('supplier:write')&&x.status==='Approved'&&<Button size="xs" color="red" variant="light" onClick={()=>change(x,'Suspended')}>Suspend</Button>}{can('supplier:write')&&x.status==='Suspended'&&<Button size="xs" variant="light" onClick={()=>change(x,'Approved')}>Reinstate</Button>}</Group></Table.Td></Table.Tr>)}</Table.Tbody></Table>}</Card>
