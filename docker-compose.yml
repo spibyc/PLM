@@ -27,7 +27,7 @@ services:
       APP_DB_PASSWORD: ${APP_DB_PASSWORD:?Set APP_DB_PASSWORD in .env (see .env.example)}
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./deploy/postgres/init:/docker-entrypoint-initdb.d:ro
+      - ./deploy/postgres/init:/docker-entrypoint-initdb.d:ro,Z
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U qplm_owner -d qplm"]
       interval: 5s
