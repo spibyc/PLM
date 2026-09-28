@@ -18,4 +18,7 @@ __pycache__/
 # Optional private deployment branding; uncomment these in a private/public split workflow:
 branding/logo.png
 branding/branding.js
-branding/
+
+# Local organisation branding
+branding/branding.js
+branding/logo.png
