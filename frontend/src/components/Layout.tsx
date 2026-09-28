@@ -1,12 +1,13 @@
-import { AppShell, Badge, Burger, Group, Menu, NavLink, ScrollArea, Text, TextInput, UnstyledButton } from "@mantine/core";
+import { ActionIcon, AppShell, Badge, Burger, Group, Menu, NavLink, ScrollArea, Text, TextInput, UnstyledButton } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import {
   IconArrowsExchange, IconBox, IconBuildingFactory2, IconChevronDown, IconCpu,
   IconFileDescription, IconGitPullRequest, IconHistory, IconInfoCircle, IconLayoutDashboard, IconListTree,
-  IconMapPin, IconPackageImport, IconSearch, IconShoppingCart, IconTruckDelivery, IconUsers,
+  IconMapPin, IconMoon, IconPackageImport, IconSearch, IconShoppingCart, IconSun, IconTruckDelivery, IconUsers,
 } from "@tabler/icons-react";
 import { useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useMantineColorScheme } from "@mantine/core";
 import { useAuth } from "../lib/auth";
 import { branding, subtitle } from "../branding";
 
@@ -45,12 +46,21 @@ export function Layout({ children }: { children: ReactNode }) {
   const loc = useLocation();
   const nav = useNavigate();
   const [q, setQ] = useState("");
+  const { colorScheme, toggleColorScheme } = useMantineColorScheme();
 
   const active = (to: string) => (to === "/" ? loc.pathname === "/" : loc.pathname.startsWith(to));
 
   return (
-    <AppShell header={{ height: 56 }} navbar={{ width: 236, breakpoint: "sm", collapsed: { mobile: !opened } }}
-      padding="lg" styles={{ main: { background: "var(--plm-paper)" } }}>
+    <AppShell
+    header={{ height: 56 }}
+    navbar={{ width: 236, breakpoint: "sm", collapsed: { mobile: !opened } }}
+    padding="lg"
+    styles={{
+      main: { background: "var(--plm-paper)", color: "var(--plm-ink)" },
+          header: { background: "var(--plm-surface)" },
+          navbar: { background: "var(--plm-surface)" },
+    }}
+    >
       <AppShell.Header className="no-print" style={{ borderBottom: "1px solid var(--plm-rule)" }}>
         <Group h="100%" px="md" justify="space-between" wrap="nowrap">
           <Group gap="sm" wrap="nowrap">
@@ -64,6 +74,15 @@ export function Layout({ children }: { children: ReactNode }) {
             <TextInput leftSection={<IconSearch size={16} />} placeholder="Part number, MPN, lot, location… or scan a label"
               value={q} onChange={(e) => setQ(e.currentTarget.value)} aria-label="Search" />
           </form>
+          <ActionIcon
+            variant="default"
+            size="lg"
+            onClick={toggleColorScheme}
+            aria-label="Toggle colour scheme"
+            title={colorScheme === "dark" ? "Use light mode" : "Use dark mode"}
+          >
+            {colorScheme === "dark" ? <IconSun size={18} /> : <IconMoon size={18} />}
+          </ActionIcon>
           <Menu position="bottom-end" width={240}>
             <Menu.Target>
               <UnstyledButton aria-label="Account menu">
