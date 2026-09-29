@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import require
 from app.context import Actor
 from app.db import get_db
-from app.models import ItemRevision
+from app.models import Item, ItemRevision
 from app.models.items import ITEM_CLASSES, MFR_LIFECYCLE, UOMS
 from app.core.errors import NotFound
 from app.services import files, items
@@ -185,6 +185,19 @@ def discard(item_id: uuid.UUID, rev_id: uuid.UUID, body: ReasonIn, actor: Actor 
 def new_revision(item_id: uuid.UUID, body: NewRevisionIn, actor: Actor = Depends(require("item:write")),
                  db: Session = Depends(get_db)) -> dict:
     items.new_revision(db, actor, item_id, body.change_reason)
+    db.commit()
+    return items.item_detail(db, item_id)
+
+
+@router.post("/{item_id}/attachments")
+def upload_part_file(item_id: uuid.UUID, file: UploadFile = File(...), doc_kind: str = Form(...),
+                     description: str | None = Form(None), actor: Actor = Depends(require("files:upload")),
+                     db: Session = Depends(get_db)) -> dict:
+    item = db.get(Item, item_id, with_for_update=True)
+    if item is None:
+        raise NotFound("Part")
+    files.attach(db, actor, "item", item.id, file.file, file.filename or "", doc_kind, description,
+                 item.part_number)
     db.commit()
     return items.item_detail(db, item_id)
 

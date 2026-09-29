@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- Part details now allow audited minimum-stock changes without a new revision. The Files tab supports shared part attachments at any lifecycle state while preserving signed revision files.
+- The dashboard counts only parts whose available stock is strictly below their minimum; zero stock with a zero minimum is excluded.
+
+- Receive Stock and PO part selectors now show internal PN, approved MPNs and description. New POs support adding and removing multiple lines before creation.
+
+- Receive Stock now selects matching PO lines, fills outstanding quantities, records linked goods receipts, and rejects stale or duplicate submissions. PO lines show receipt status, and received lots link back to their order.
+
+- Fixed flashing part selectors in Edit PO by keeping selected labels stable across search results.
+
+- Added purchase-order detail pages, linked from PO numbers in the register and opened after creation.
+- PO details show supplier, dates, notes, line items, costs, receipt progress, linked lots and approval signatures; authorised users can approve Draft orders from the detail page.
+- Added audited draft PO editing with multiple lines, add/remove controls, supplier and order metadata changes, revision conflict checks, and an approval lock.
+- New PO and draft line editors fill Supplier part number from the selected part purchasing source's Source part number, preserving saved values until a replacement source is selected.
+
 ## 0.3.1 — Generic PLM branding and public-repository preparation
 
 - Renamed the public application identity from QPLM to **PLM**.

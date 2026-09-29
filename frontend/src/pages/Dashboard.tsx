@@ -9,7 +9,7 @@ function Stat({ label, value, to, warn }: { label: string; value: number; to?: s
   const body = (
     <Paper withBorder p="md" radius="sm" style={warn && value > 0 ? { borderColor: "#B42318", borderLeftWidth: 4 } : undefined}>
       <Text size="sm" c="dimmed">{label}</Text>
-      <Text fz={28} fw={600} className="ident" c={warn && value > 0 ? "red.8" : undefined}>{value}</Text>
+      <Text fz={28} fw={600} className="ident" c={warn && value > 0 ? "var(--plm-danger)" : undefined}>{value}</Text>
     </Paper>
   );
   return to ? <Anchor component={Link} to={to} underline="never" c="inherit">{body}</Anchor> : body;
@@ -29,7 +29,7 @@ export default function Dashboard() {
         <Stat label="Awaiting approval" value={d.pending_approvals} to="/parts?status=Under Review" />
         <Stat label="Lots awaiting inspection" value={d.lots_pending_inspection} to="/lots?status=Pending Inspection" warn />
         <Stat label="Lots in quarantine" value={d.lots_quarantined} to="/lots?status=Quarantined" warn />
-        <Stat label="Below minimum stock" value={d.low_stock + d.out_of_stock} to="/parts" warn />
+        <Stat label="Below minimum stock" value={d.below_min_stock} to="/parts" warn />
       </SimpleGrid>
       <Grid>
         <Grid.Col span={{ base: 12, lg: 7 }}>

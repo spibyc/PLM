@@ -1,4 +1,4 @@
-import { Anchor, Button, Checkbox, Group, Modal, Paper, Select, Stack, Table, Text, TextInput } from "@mantine/core";
+import { Anchor, Button, Checkbox, Group, Modal, Paper, Select, Stack, Table, Text, TextInput, Textarea } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconPlus, IconPrinter } from "@tabler/icons-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -14,6 +14,8 @@ export default function Locations() {
   const { can } = useAuth();
   const [creating, setCreating] = useState<string | null | undefined>(undefined);
   const { data, error, isLoading } = useQuery({ queryKey: ["locations"], queryFn: () => api("/api/locations") });
+  const system = useQuery({ queryKey: ["locations", "system"], queryFn: () => api("/api/locations?include_system=true") });
+  const unallocated = system.data?.find((l: any) => l.system_key === "unallocated");
   const tree = useMemo(() => {
     const kids: Record<string, any[]> = {};
     (data ?? []).forEach((l: any) => { (kids[l.parent_id ?? "root"] ||= []).push(l); });
@@ -27,6 +29,11 @@ export default function Locations() {
       <PageHeader title="Locations" sub="Where stock is kept. Every location has a printable QR label."
         actions={can("location:write") && <Button leftSection={<IconPlus size={16} />} onClick={() => setCreating(null)}>New site</Button>} />
       <ErrorBox error={error} />
+      <ErrorBox error={system.error} />
+      {unallocated && <Paper withBorder p="md" mb="md">
+        <Anchor component={Link} to={`/locations/${unallocated.id}`}>Unallocated stock ({fmtQty(unallocated.qty_on_hand)} on hand)</Anchor>
+        <Text size="sm" c="dimmed">Stock awaiting a physical storage location. Open a lot to transfer it to a location.</Text>
+      </Paper>}
       {isLoading ? <Loading /> : !tree.length ? <Empty>No locations yet. Start by creating a site.</Empty> : (
         <Paper withBorder radius="sm">
           <Table.ScrollContainer minWidth={700}>
@@ -36,7 +43,7 @@ export default function Locations() {
                 {tree.map(({ loc, depth }) => (
                   <LinkRow key={loc.id} to={`/locations/${loc.id}`}>
                     <Table.Td style={{ paddingLeft: 12 + depth * 20 }}><Ident>{loc.code}</Ident></Table.Td>
-                    <Table.Td>{loc.name}{loc.is_quarantine && <Text span c="red.8" size="xs" fw={600}> quarantine</Text>}{!loc.is_active && <Text span c="dimmed" size="xs"> inactive</Text>}</Table.Td>
+                    <Table.Td>{loc.name}{loc.is_quarantine && <Text span c="var(--plm-danger)" size="xs" fw={600}> quarantine</Text>}{!loc.is_active && <Text span c="dimmed" size="xs"> inactive</Text>}</Table.Td>
                     <Table.Td>{loc.kind}</Table.Td>
                     <Table.Td ta="right" className="ident">{loc.qty_on_hand ? fmtQty(loc.qty_on_hand) : ""}</Table.Td>
                     <Table.Td onClick={(e) => e.stopPropagation()}>
@@ -87,6 +94,12 @@ function NewLocation({ parentId, all, onClose }: { parentId: string | null | und
 export function LocationDetail() {
   const { id } = useParams();
   const nav = useNavigate();
+  const { can } = useAuth();
+  const qc = useQueryClient();
+  const [deleting, setDeleting] = useState(false);
+  const [reason, setReason] = useState("");
+  const [deleteError, setDeleteError] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
   const { data: loc, error, isLoading } = useQuery({ queryKey: ["location", id], queryFn: () => api(`/api/locations/${id}`) });
   if (isLoading) return <Loading />;
   if (error) return <ErrorBox error={error} />;
@@ -97,7 +110,32 @@ export function LocationDetail() {
         {loc.ancestors.map((a: any) => <span key={a.id}> / <Anchor component={Link} to={`/locations/${a.id}`}>{a.code}</Anchor></span>)}
       </Text>
       <PageHeader title={<Ident size="lg">{loc.code}</Ident>} sub={`${loc.path} · ${loc.kind}${loc.is_quarantine ? " · quarantine" : ""}${loc.is_active ? "" : " · inactive"}`}
-        actions={<Button variant="default" leftSection={<IconPrinter size={16} />} onClick={() => nav(`/labels?locations=${loc.id}${loc.children.map((c: any) => "," + c.id).join("")}`)}>Print labels</Button>} />
+        actions={<Group>{can("location:delete") && loc.is_active && !loc.system_key &&
+          <Button color="red" variant="outline" onClick={() => { setDeleting(true); setDeleteError(null); setReason(""); }}>Delete location</Button>}
+          <Button variant="default" leftSection={<IconPrinter size={16} />} onClick={() => nav(`/labels?locations=${loc.id}${loc.children.map((c: any) => "," + c.id).join("")}`)}>Print labels</Button></Group>} />
+      <Modal opened={deleting} onClose={() => { if (!busy) setDeleting(false); }} title={`Delete ${loc.code}?`}
+        closeOnClickOutside={!busy} closeOnEscape={!busy} withCloseButton={!busy}>
+        <Stack>
+          <Text>This location will no longer be available. Stock currently stored here, including reserved stock, will be moved to Unallocated. Historical inventory records will be retained.</Text>
+          {loc.children.length > 0 && <Text c="red">This location contains child locations. Delete or move the child locations first.</Text>}
+          <Textarea label="Reason" required minRows={2} value={reason} disabled={busy}
+            onChange={(e) => setReason(e.currentTarget.value)} />
+          <ErrorBox error={deleteError} />
+          <Group justify="flex-end">
+            <Button variant="default" disabled={busy} onClick={() => setDeleting(false)}>Cancel</Button>
+            <Button color="red" loading={busy} disabled={reason.trim().length < 3 || loc.children.length > 0} onClick={async () => {
+              setBusy(true); setDeleteError(null);
+              try {
+                await api(`/api/locations/${id}/retire`, { body: { reason: reason.trim() } });
+                await qc.invalidateQueries();
+                notifications.show({ message: "Location deleted. Stock moved to Unallocated; history retained.", color: "mask" });
+                setDeleting(false); nav("/locations");
+              } catch (x) { setDeleteError(x); } finally { setBusy(false); }
+            }}>Delete location</Button>
+          </Group>
+        </Stack>
+      </Modal>
+      {loc.system_key && <Text mb="md">Open a lot below and use “Move to another location” to assign its stock to a physical location.</Text>}
       <Group align="flex-start" gap="lg" wrap="wrap">
         <Paper withBorder p="sm" radius="sm"><img src={`/api/qr/location/${loc.id}.svg`} width={140} height={140} alt={`QR code for ${loc.code}`} /></Paper>
         <Stack style={{ flex: 1, minWidth: 320 }}>
@@ -165,6 +203,7 @@ export function Labels() {
         <PageHeader title="Labels" sub="62 × 29 mm labels. Use your browser's print dialog; set margins to none and scale to 100%."
           actions={<Button leftSection={<IconPrinter size={16} />} onClick={() => window.print()}>Print</Button>} />
         <ErrorBox error={error} />
+
       </div>
       <div className="label-sheet">
         {data?.map((l) => (

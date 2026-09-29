@@ -174,6 +174,7 @@ def admin_delete_item(db: Session, actor: Actor, item_id: uuid.UUID, reason: str
         from app.models import StateTransition
         db.execute(delete(StateTransition).where(StateTransition.object_type == "item_revision", StateTransition.object_id.in_(rev_ids)))
         db.execute(delete(Attachment).where(Attachment.object_type == "item_revision", Attachment.object_id.in_(rev_ids)))
+    db.execute(delete(Attachment).where(Attachment.object_type == "item", Attachment.object_id == item.id))
     db.execute(delete(AmlEntry).where(AmlEntry.item_id == item.id))
     item.current_released_revision_id = None
     db.flush()
@@ -340,6 +341,14 @@ def list_items(db: Session, q: str | None, status: str | None, limit: int, offse
     total = db.execute(select(func.count()).select_from(base.subquery())).scalar_one()
     rows = db.execute(base.order_by(Item.part_number).limit(limit).offset(offset)).all()
     stock = stock_summary(db, [i.id for i, _r in rows])
+    mpns = {}
+    for item_id, mpn in db.execute(select(AmlEntry.item_id, ManufacturerPart.mpn)
+            .join(ManufacturerPart, ManufacturerPart.id == AmlEntry.manufacturer_part_id)
+            .where(AmlEntry.item_id.in_([i.id for i, _r in rows]), AmlEntry.status == "Approved")
+            .order_by(AmlEntry.preferred.desc(), ManufacturerPart.mpn)):
+        values = mpns.setdefault(item_id, [])
+        if mpn not in values:
+            values.append(mpn)
     rel = {r.id: r for r in db.execute(select(ItemRevision).where(
         ItemRevision.id.in_([i.current_released_revision_id for i, _r in rows if i.current_released_revision_id]))).scalars()}
     items = []
@@ -347,7 +356,7 @@ def list_items(db: Session, q: str | None, status: str | None, limit: int, offse
         cr = rel.get(i.current_released_revision_id) if i.current_released_revision_id else None
         items.append({
             "id": str(i.id), "part_number": i.part_number, "item_class": i.item_class, "uom": i.uom,
-            "description": r.description, "value": r.value, "package": r.package, "category": r.category,
+            "description": r.description, "mpns": mpns.get(i.id, []), "value": r.value, "package": r.package, "category": r.category,
             "latest_revision": r.revision_label, "latest_status": r.status,
             "released_revision": cr.revision_label if cr else None, "released_status": cr.status if cr else None,
             "min_stock": float(i.min_stock), **stock[i.id],
@@ -355,10 +364,16 @@ def list_items(db: Session, q: str | None, status: str | None, limit: int, offse
     return {"total": total, "items": items}
 
 
-def _rev_dict(db: Session, item: Item, r: ItemRevision, names: dict[uuid.UUID, str]) -> dict[str, Any]:
+def _attachments(db: Session, object_type: str, object_id: uuid.UUID, names: dict) -> list[dict]:
     atts = db.execute(select(Attachment, FileObject).join(FileObject, FileObject.id == Attachment.file_object_id)
-                      .where(Attachment.object_type == "item_revision", Attachment.object_id == r.id)
+                      .where(Attachment.object_type == object_type, Attachment.object_id == object_id)
                       .order_by(Attachment.uploaded_at)).all()
+    return [{"id": str(a.id), "filename": a.filename, "doc_kind": a.doc_kind, "description": a.description,
+                         "sha256": f.sha256, "size_bytes": f.size_bytes, "mime_type": f.mime_type,
+                         "uploaded_at": a.uploaded_at, "uploaded_by": names.get(a.uploaded_by)} for a, f in atts]
+
+
+def _rev_dict(db: Session, item: Item, r: ItemRevision, names: dict[uuid.UUID, str]) -> dict[str, Any]:
     return {
         "id": str(r.id), "revision_label": r.revision_label, "status": r.status, "row_version": r.row_version,
         "review_cycle": r.review_cycle, "content_hash": r.content_hash,
@@ -369,9 +384,7 @@ def _rev_dict(db: Session, item: Item, r: ItemRevision, names: dict[uuid.UUID, s
         "is_current_released": item.current_released_revision_id == r.id,
         "signatures": signatures.list_for(db, "item_revision", r.id),
         "transitions": signatures.transitions_for(db, "item_revision", r.id),
-        "attachments": [{"id": str(a.id), "filename": a.filename, "doc_kind": a.doc_kind, "description": a.description,
-                         "sha256": f.sha256, "size_bytes": f.size_bytes, "mime_type": f.mime_type,
-                         "uploaded_at": a.uploaded_at, "uploaded_by": names.get(a.uploaded_by)} for a, f in atts],
+        "attachments": _attachments(db, "item_revision", r.id, names),
     }
 
 
@@ -388,6 +401,7 @@ def item_detail(db: Session, item_id: uuid.UUID) -> dict[str, Any]:
         "id": str(item.id), "part_number": item.part_number, "item_class": item.item_class, "uom": item.uom,
         "min_stock": float(item.min_stock), "created_at": item.created_at, "created_by": names.get(item.created_by),
         "current_released_revision_id": str(item.current_released_revision_id) if item.current_released_revision_id else None,
+        "attachments": _attachments(db, "item", item.id, names),
         "revisions": [_rev_dict(db, item, r, names) for r in revs],
         "aml": [{"id": str(a.id), "status": a.status, "preferred": a.preferred, "notes": a.notes,
                  "qualification_status": a.qualification_status, "manufacturer": m.name, "mpn": mp.mpn,

@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from app.context import Actor
 from app.core.errors import Conflict, DomainError, NotFound
 from app.models import (
-    AmlEntry, Attachment, FileObject, InventoryLot, Item, ItemRevision, Location, LotBalance, Manufacturer,
+    AmlEntry, Attachment, FileObject, GoodsReceipt, GoodsReceiptLine, InventoryLot, Item, ItemRevision, Location, LotBalance, Manufacturer,
     ManufacturerPart, StockTxn, User,
 )
 from app.services import audit, signatures
@@ -37,7 +37,7 @@ def available_filter(q: Select) -> Select:
     return (q.join(Location, Location.id == LotBalance.location_id)
             .join(ItemRevision, ItemRevision.id == InventoryLot.item_revision_id)
             .where(InventoryLot.status == "Available",
-                   Location.is_quarantine.is_(False),
+                   Location.is_quarantine.is_(False), Location.is_active, Location.system_key.is_(None),
                    or_(InventoryLot.expiry_date.is_(None), InventoryLot.expiry_date >= func.current_date()),
                    ItemRevision.status.notin_(BLOCKED_REV),
                    InventoryLot.item_id.notin_(_blocked_items())))
@@ -58,6 +58,10 @@ def usability_problems(db: Session, lot: InventoryLot, location: Location | None
         cur = db.get(ItemRevision, item.current_released_revision_id)
         if cur and cur.status in BLOCKED_REV and cur.id != lot.item_revision_id:
             probs.append(f"Item's current revision {cur.revision_label} is {cur.status}")
+    if location is not None and location.system_key:
+        probs.append("Stock must be assigned to a physical storage location")
+    if location is not None and not location.is_active:
+        probs.append("Location is inactive")
     if location is not None and location.is_quarantine:
         probs.append(f"Location {location.code} is a quarantine location")
     return probs
@@ -85,10 +89,11 @@ def _lock_lot(db: Session, lot_id: uuid.UUID) -> tuple[InventoryLot, Item]:
 
 
 def _location(db: Session, loc_id: uuid.UUID, must_be_active: bool = True) -> Location:
-    loc = db.get(Location, loc_id)
+    loc = db.execute(select(Location).where(Location.id == loc_id).with_for_update(read=True)
+                     .execution_options(populate_existing=True)).scalar_one_or_none()
     if loc is None:
         raise NotFound("Location")
-    if must_be_active and not loc.is_active:
+    if loc.retired_at or (must_be_active and not loc.is_active):
         raise DomainError(f"Location {loc.code} is inactive", "validation")
     return loc
 
@@ -166,6 +171,8 @@ def receive(db: Session, actor: Actor, *, item_id: uuid.UUID, qty: Any, location
         raise DomainError("This item has an approved AML: the manufacturer part received must be specified",
                           "mpn_required")
     loc = _location(db, location_id)
+    if loc.system_key:
+        raise Conflict("Receive stock into a physical storage location")
     lot = InventoryLot(lot_no=next_number(db, "LOT"), item_id=item.id, item_revision_id=rev.id,
                        manufacturer_part_id=manufacturer_part_id, supplier_name=supplier_name,
                        supplier_part_number=supplier_part_number, purchase_order_ref=purchase_order_ref,
@@ -247,7 +254,7 @@ def reserve(db: Session, actor: Actor, lot_id: uuid.UUID, location_id: uuid.UUID
 
 
 def transfer(db: Session, actor: Actor, lot_id: uuid.UUID, from_id: uuid.UUID, to_id: uuid.UUID, qty: Any,
-             comment: str | None) -> list[StockTxn]:
+             comment: str | None, *, qty_reserved: Any = 0) -> list[StockTxn]:
     lot, item = _lock_lot(db, lot_id)
     qty = _q(qty)
     _check_qty(item, qty)
@@ -256,15 +263,20 @@ def transfer(db: Session, actor: Actor, lot_id: uuid.UUID, from_id: uuid.UUID, t
     src, dst = _location(db, from_id, must_be_active=False), _location(db, to_id)
     if src.is_quarantine and not dst.is_quarantine and lot.status == "Quarantined":
         raise Conflict("Quarantined material must be released before leaving a quarantine location")
+    reserved = _q(qty_reserved)
+    if reserved < 0 or reserved > qty:
+        raise DomainError("Reserved quantity must be between zero and the transfer quantity", "validation")
+    if reserved:
+        _check_qty(item, reserved)
     cid = uuid.uuid4()
     a, b = sorted([src.id, dst.id])  # deterministic balance lock order
     for lid in (a, b):
         db.execute(pg_insert(LotBalance).values(lot_id=lot.id, location_id=lid, qty_on_hand=0, qty_reserved=0)
                    .on_conflict_do_nothing())
         db.execute(select(LotBalance).where(LotBalance.lot_id == lot.id, LotBalance.location_id == lid).with_for_update())
-    out = _post(db, actor, txn_type="TRANSFER_OUT", lot=lot, location_id=src.id, d_on_hand=-qty, d_reserved=Decimal(0),
+    out = _post(db, actor, txn_type="TRANSFER_OUT", lot=lot, location_id=src.id, d_on_hand=-qty, d_reserved=-reserved,
                 correlation_id=cid, comment=comment, reason=f"Transfer to {dst.code}")
-    inn = _post(db, actor, txn_type="TRANSFER_IN", lot=lot, location_id=dst.id, d_on_hand=qty, d_reserved=Decimal(0),
+    inn = _post(db, actor, txn_type="TRANSFER_IN", lot=lot, location_id=dst.id, d_on_hand=qty, d_reserved=reserved,
                 correlation_id=cid, comment=comment, reason=f"Transfer from {src.code}")
     return [out, inn]
 
@@ -394,12 +406,16 @@ def lot_detail(db: Session, lot_id: uuid.UUID) -> dict[str, Any]:
     atts = db.execute(select(Attachment, FileObject).join(FileObject, FileObject.id == Attachment.file_object_id)
                       .where(Attachment.object_type == "inventory_lot", Attachment.object_id == lot.id)).all()
     receiver = db.get(User, lot.received_by)
+    purchase_order_id = db.execute(select(GoodsReceipt.po_id)
+        .join(GoodsReceiptLine, GoodsReceiptLine.receipt_id == GoodsReceipt.id)
+        .where(GoodsReceiptLine.lot_id == lot.id)).scalar_one_or_none()
     return {
         "id": str(lot.id), "lot_no": lot.lot_no, "status": lot.status, "item_id": str(item.id),
         "part_number": item.part_number, "description": rev.description, "revision": rev.revision_label,
         "revision_status": rev.status, "uom": item.uom, "manufacturer": mname, "mpn": mp.mpn if mp else None,
         "supplier_name": lot.supplier_name, "supplier_part_number": lot.supplier_part_number,
-        "purchase_order_ref": lot.purchase_order_ref, "supplier_lot": lot.supplier_lot,
+        "purchase_order_ref": lot.purchase_order_ref,
+        "purchase_order_id": str(purchase_order_id) if purchase_order_id else None, "supplier_lot": lot.supplier_lot,
         "manufacturer_lot": lot.manufacturer_lot, "date_code": lot.date_code,
         "qty_received": float(lot.qty_received), "expiry_date": lot.expiry_date, "received_at": lot.received_at,
         "received_by": receiver.full_name if receiver else None, "notes": lot.notes,

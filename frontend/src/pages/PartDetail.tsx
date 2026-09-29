@@ -1,5 +1,5 @@
 import {
-  Alert, Anchor, Button, Checkbox, Code, FileInput, Group, Modal, Paper, SegmentedControl, Select, SimpleGrid, Stack,
+  Alert, Anchor, Button, Checkbox, Code, FileInput, Group, Modal, NumberInput, Paper, SegmentedControl, Select, SimpleGrid, Stack,
   Table, Tabs, Text, TextInput, Textarea,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
@@ -43,6 +43,7 @@ export default function PartDetail() {
   const [signing, setSigning] = useState(false);
   const [newRev, setNewRev] = useState(false);
   const [actionErr, setActionErr] = useState<unknown>(null);
+  const [planning, setPlanning] = useState(false);
   const [adminEditing, setAdminEditing] = useState(false);
 
   useEffect(() => {
@@ -123,7 +124,7 @@ export default function PartDetail() {
       <Tabs defaultValue="details" keepMounted={false}>
         <Tabs.List mb="md">
           <Tabs.Tab value="details">Details</Tabs.Tab>
-          <Tabs.Tab value="files">Files ({rev.attachments.length})</Tabs.Tab>
+          <Tabs.Tab value="files">Files ({rev.attachments.length + (item.attachments?.length ?? 0)})</Tabs.Tab>
           <Tabs.Tab value="approvals">Approvals ({rev.signatures.length})</Tabs.Tab>
           <Tabs.Tab value="sources">Manufacturer sources ({item.aml.length})</Tabs.Tab>
           <Tabs.Tab value="stock">Stock</Tabs.Tab>
@@ -143,11 +144,17 @@ export default function PartDetail() {
               <dt>Created</dt><dd>{fmtDate(rev.created_at)} by {rev.created_by}</dd>
               <dt>Last modified</dt><dd>{fmtDate(rev.modified_at)} by {rev.modified_by}</dd>
               {rev.released_at && (<><dt>Released</dt><dd>{fmtDate(rev.released_at)}</dd></>)}
-              <dt>Minimum stock</dt><dd className="ident">{fmtQty(item.min_stock)} {item.uom}</dd>
+              <dt>Minimum stock</dt><dd className="ident">{fmtQty(item.min_stock)} {item.uom} {can("item:write") && <Button size="xs" variant="subtle" onClick={() => setPlanning(true)}>Edit minimum stock</Button>}</dd>
             </dl>
           </Paper>
         </Tabs.Panel>
-        <Tabs.Panel value="files"><Files rev={rev} base={base} editable={rev.status === "Draft" && can("files:upload")} onChanged={refresh} /></Tabs.Panel>
+        <Tabs.Panel value="files"><Stack>
+          <Text fw={600}>Part files</Text>
+          <Text size="sm" c="dimmed">Supporting files shared across all revisions. Uploading here does not create a new revision or change its approvals.</Text>
+          <Files rev={{ attachments: item.attachments ?? [] }} base={`/api/items/${item.id}`} editable={can("files:upload")} onChanged={refresh} partLevel />
+          <Text fw={600}>Revision {rev.revision_label} files</Text>
+          <Files rev={rev} base={base} editable={rev.status === "Draft" && can("files:upload")} onChanged={refresh} />
+        </Stack></Tabs.Panel>
         <Tabs.Panel value="approvals"><Approvals rev={rev} /></Tabs.Panel>
         <Tabs.Panel value="sources"><Sources item={item} onChanged={refresh} /></Tabs.Panel>
         <Tabs.Panel value="stock"><PartStock itemId={item.id} stock={item.stock} uom={item.uom} /></Tabs.Panel>
@@ -161,12 +168,36 @@ export default function PartDetail() {
           const d = await api(`${base}/sign`, { body: { meaning, password, comment, content_hash: rev.content_hash } });
           refresh(d); notifications.show({ message: `Signed “${meaning}”`, color: "mask" });
         }} />
+      {planning && <PlanningEditor item={item} onClose={() => setPlanning(false)} onSaved={(d) => {
+        refresh(d); qc.invalidateQueries({ queryKey: ["dashboard"] }); qc.invalidateQueries({ queryKey: ["items"] }); setPlanning(false);
+      }} />}
       <NewRevision opened={newRev} onClose={() => setNewRev(false)} itemId={item.id} onDone={(d) => { refresh(d); setRevId(null); }} />
       <Modal opened={adminEditing} onClose={() => setAdminEditing(false)} title={`Superuser edit — ${item.part_number} rev ${rev.revision_label}`} size="lg">
         <AdminEditor rev={rev} base={base} onSaved={(d) => { refresh(d); setAdminEditing(false); }} />
       </Modal>
     </>
   );
+}
+
+function PlanningEditor({ item, onClose, onSaved }: { item: any; onClose: () => void; onSaved: (d: any) => void }) {
+  const [minimum, setMinimum] = useState<number | string>(item.min_stock);
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  return <Modal opened title="Edit minimum stock" onClose={() => { if (!busy) onClose(); }} closeOnClickOutside={false} closeOnEscape={!busy} withCloseButton={!busy}>
+    <Stack>
+      <Text size="sm">Minimum stock applies across all revisions. Saving records the change without creating a new revision.</Text>
+      <NumberInput label={`Minimum stock (${item.uom})`} min={0} value={minimum} onChange={setMinimum} disabled={busy} required />
+      <Textarea label="Reason for change" value={reason} onChange={e => setReason(e.currentTarget.value)} disabled={busy} required />
+      <ErrorBox error={error} />
+      <Group justify="flex-end"><Button variant="default" disabled={busy} onClick={onClose}>Cancel</Button>
+        <Button loading={busy} disabled={minimum === "" || !Number.isFinite(Number(minimum)) || Number(minimum) < 0 || reason.trim().length < 3} onClick={async () => {
+          setBusy(true); setError(null);
+          try { onSaved(await api(`/api/items/${item.id}/planning`, { method: "PUT", body: { min_stock: minimum, reason: reason.trim() } })); }
+          catch (e) { setError(e); } finally { setBusy(false); }
+        }}>Save minimum stock</Button></Group>
+    </Stack>
+  </Modal>;
 }
 
 function AdminEditor({ rev, base, onSaved }: { rev: any; base: string; onSaved: (d: any) => void }) {
@@ -221,7 +252,7 @@ function DraftEditor({ rev, base, onSaved }: { rev: any; base: string; onSaved: 
   );
 }
 
-function Files({ rev, base, editable, onChanged }: { rev: any; base: string; editable: boolean; onChanged: (d: any) => void }) {
+function Files({ rev, base, editable, onChanged, partLevel = false }: { rev: any; base: string; editable: boolean; onChanged: (d: any) => void; partLevel?: boolean }) {
   const meta = useQuery({ queryKey: ["item-meta"], queryFn: () => api("/api/items/meta") });
   const [file, setFile] = useState<File | null>(null);
   const [kind, setKind] = useState<string | null>("datasheet");
@@ -243,7 +274,7 @@ function Files({ rev, base, editable, onChanged }: { rev: any; base: string; edi
           </Group>
           <ErrorBox error={err} />
         </Paper>
-      ) : <Text size="sm" c="dimmed">Files are frozen with this revision. To change them, create a new revision.</Text>}
+      ) : !partLevel && <Text size="sm" c="dimmed">Files are frozen with this revision. To change them, create a new revision.</Text>}
       {rev.attachments.length === 0 ? <Empty>No files attached.</Empty> : (
         <Paper withBorder radius="sm">
           <Table.ScrollContainer minWidth={700}>
@@ -326,7 +357,7 @@ function Sources({ item, onChanged }: { item: any; onChanged: (d: any) => void }
               <Table.Tbody>
                 {item.aml.map((a: any) => (
                   <Table.Tr key={a.id}>
-                    <Table.Td>{a.manufacturer}{a.preferred && <Text span size="xs" c="mask.8" fw={600}> preferred</Text>}</Table.Td>
+                    <Table.Td>{a.manufacturer}{a.preferred && <Text span size="xs" c="var(--plm-primary)" fw={600}> preferred</Text>}</Table.Td>
                     <Table.Td><Ident>{a.mpn}</Ident>{a.datasheet_url && <> · <Anchor href={a.datasheet_url} target="_blank" rel="noreferrer" size="sm">datasheet</Anchor></>}</Table.Td>
                     <Table.Td>{a.sources?.length ? a.sources.map((src: any) => <div key={src.id}>{src.distributor}{src.source_part_number && <> · <Ident>{src.source_part_number}</Ident></>}{src.source_url && <> · <Anchor href={src.source_url} target="_blank" rel="noreferrer" size="sm">link</Anchor></>}</div>) : "—"}</Table.Td>
                     <Table.Td>{a.lifecycle}</Table.Td><Table.Td><StatusBadge status={a.status} /></Table.Td>
@@ -428,8 +459,8 @@ export function ChangeView({ before, after, reason }: { before: any; after: any;
     <Stack gap={2}>
       {keys.map((k) => (
         <Text size="xs" key={k}>
-          <b>{k}</b>: {before && k in before ? <Text span c="red.8" td="line-through">{String(before[k] ?? "∅")}</Text> : null}{" "}
-          {after && k in after ? <Text span c="mask.8">{typeof after[k] === "object" ? JSON.stringify(after[k]) : String(after[k] ?? "∅")}</Text> : null}
+          <b>{k}</b>: {before && k in before ? <Text span c="var(--plm-danger)" td="line-through">{String(before[k] ?? "∅")}</Text> : null}{" "}
+          {after && k in after ? <Text span c="var(--plm-primary)">{typeof after[k] === "object" ? JSON.stringify(after[k]) : String(after[k] ?? "∅")}</Text> : null}
         </Text>
       ))}
       {reason && <Text size="xs" c="dimmed">Reason: {reason}</Text>}

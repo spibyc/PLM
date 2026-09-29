@@ -13,7 +13,22 @@ class SupplierIn(BaseModel): code:str=Field(min_length=2,max_length=32); name:st
 class SupplierStatusIn(BaseModel): status:str; reason:str=Field(min_length=3)
 class POLine(BaseModel): item_id:uuid.UUID; manufacturer_part_id:uuid.UUID|None=None; supplier_part_number:str|None=None; qty_ordered:Decimal=Field(gt=0); unit_cost:Decimal=Field(ge=0)
 class POIn(BaseModel): supplier_id:uuid.UUID; currency:str=Field(min_length=3,max_length=3); expected_date:dt.date|None=None; notes:str|None=None; lines:list[POLine]=Field(min_length=1)
-class ReceiptLine(BaseModel): po_line_id:uuid.UUID; qty:Decimal=Field(gt=0); supplier_lot:str|None=None; manufacturer_lot:str|None=None; date_code:str|None=None; expiry_date:dt.date|None=None; notes:str|None=None
+class POEditLine(POLine):
+    id: uuid.UUID | None = None
+class POEdit(BaseModel):
+    supplier_id: uuid.UUID
+    revision: int = Field(ge=1)
+    currency: str = Field(min_length=3, max_length=3)
+    expected_date: dt.date | None = None
+    notes: str | None = None
+    reason: str = Field(min_length=3)
+    lines: list[POEditLine] = Field(min_length=1)
+class POApproval(Signed):
+    revision: int | None = None
+class ReceiptLine(BaseModel):
+    expected_qty_received: Decimal | None = None
+    manufacturer_part_id: uuid.UUID | None = None
+    po_line_id:uuid.UUID; qty:Decimal=Field(gt=0); supplier_lot:str|None=None; manufacturer_lot:str|None=None; date_code:str|None=None; expiry_date:dt.date|None=None; notes:str|None=None
 class ReceiptIn(BaseModel): location_id:uuid.UUID; lines:list[ReceiptLine]=Field(min_length=1); notes:str|None=None
 class BomLineIn(BaseModel): item_id:uuid.UUID; quantity:Decimal=Field(gt=0); references:str|None=None; dnp:bool=False; notes:str|None=None
 class BomIn(BaseModel): product_item_id:uuid.UUID; name:str; revision:str; change_reason:str=Field(min_length=3); lines:list[BomLineIn]=Field(min_length=1)
@@ -38,8 +53,13 @@ def pos(actor:Actor=Depends(require('po:read')),db:Session=Depends(get_db)): ret
 def po(body:POIn,actor:Actor=Depends(require('po:write')),db:Session=Depends(get_db)): x=t.create_po(db,actor,body.supplier_id,body.currency,body.expected_date,body.notes,[x.model_dump() for x in body.lines]);db.commit();return t.po_detail(db,x.id)
 @router.get('/purchase-orders/{pid}')
 def po_get(pid:uuid.UUID,actor:Actor=Depends(require('po:read')),db:Session=Depends(get_db)): return t.po_detail(db,pid)
+@router.put('/purchase-orders/{pid}')
+def po_edit(pid: uuid.UUID, body: POEdit, actor: Actor = Depends(require('po:write')), db: Session = Depends(get_db)):
+    t.update_po(db, actor, pid, **body.model_dump())
+    db.commit()
+    return t.po_detail(db, pid)
 @router.post('/purchase-orders/{pid}/approve')
-def po_approve(pid:uuid.UUID,body:Signed,actor:Actor=Depends(require('sign:po_approved')),db:Session=Depends(get_db)): t.approve_po(db,actor,pid,body.password,body.comment);db.commit();return t.po_detail(db,pid)
+def po_approve(pid:uuid.UUID,body:POApproval,actor:Actor=Depends(require('sign:po_approved')),db:Session=Depends(get_db)): t.approve_po(db,actor,pid,body.password,body.comment,body.revision);db.commit();return t.po_detail(db,pid)
 @router.post('/purchase-orders/{pid}/receive')
 def po_receive(pid:uuid.UUID,body:ReceiptIn,actor:Actor=Depends(require('po:receive')),db:Session=Depends(get_db)): x=t.receive_po(db,actor,pid,body.location_id,[z.model_dump() for z in body.lines],body.notes); db.flush(); from app.models import GoodsReceiptLine; from sqlalchemy import select; lot_ids=[str(v) for v in db.execute(select(GoodsReceiptLine.lot_id).where(GoodsReceiptLine.receipt_id==x.id)).scalars().all()]; db.commit(); return {'receipt_id':x.id,'receipt_no':x.receipt_no,'lot_ids':lot_ids}
 @router.get('/boms')

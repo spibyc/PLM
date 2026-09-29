@@ -12,6 +12,7 @@
   --plm-rule: #C7D5D9;
   --plm-primary: #31454F;
   --plm-hover: #F2F6F7;
+  --plm-danger: #B42318;
 }
 
 [data-mantine-color-scheme="dark"] {
@@ -23,6 +24,7 @@
   --plm-rule: #3A4147;
   --plm-primary: #88AAB2;
   --plm-hover: #292E32;
+  --plm-danger: #FF8787;
 }
 
 html,
@@ -167,4 +169,8 @@ table tbody tr[data-href]:hover {
   .label {
     border: none;
   }
+}
+
+@media print {
+  .mantine-AppShell-main { background: white !important; color: #192D40 !important; }
 }

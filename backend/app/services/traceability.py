@@ -44,17 +44,127 @@ def create_po(db,actor,supplier_id,currency,expected_date,notes,lines):
     po=PurchaseOrder(po_number=next_number(db,'PO'),supplier_id=s.id,currency=currency.upper(),expected_date=expected_date,notes=notes,created_by=actor.user_id); db.add(po); db.flush()
     for i,l in enumerate(lines,1): db.add(PurchaseOrderLine(po_id=po.id,line_no=i,item_id=l['item_id'],manufacturer_part_id=l.get('manufacturer_part_id'),supplier_part_number=l.get('supplier_part_number'),qty_ordered=Decimal(str(l['qty_ordered'])),unit_cost=Decimal(str(l['unit_cost']))))
     audit.record(db,actor,'create','purchase_order',po.id,po.po_number,after={'supplier':s.code,'currency':po.currency,'lines':len(lines)}); return po
-def approve_po(db,actor,pid,password,comment=None):
-    po=db.get(PurchaseOrder,pid)
+def update_po(db, actor, pid, supplier_id, revision, currency, expected_date, notes, reason, lines):
+    po = db.execute(select(PurchaseOrder).where(PurchaseOrder.id == pid).with_for_update()).scalar_one_or_none()
+    if not po:
+        raise NotFound('Purchase order')
+    if po.status != 'Draft':
+        raise Conflict('Only Draft purchase orders can be edited')
+    if po.revision != revision:
+        raise Conflict('This purchase order has changed. Reload it before editing.', 'stale_revision')
+    if len(reason.strip()) < 3:
+        raise DomainError('A reason for the change is required', 'validation')
+    if not lines:
+        raise DomainError('At least one order line is required', 'validation')
+    if len(currency) != 3 or not currency.isascii() or not currency.isalpha():
+        raise DomainError('Currency must be a three-letter code', 'validation')
+    supplier = db.get(Supplier, supplier_id)
+    if not supplier or supplier.status != 'Approved':
+        raise Conflict('Purchase orders require an Approved supplier')
+    existing = {line.id: line for line in db.execute(select(PurchaseOrderLine).where(PurchaseOrderLine.po_id == pid)).scalars()}
+    seen = set()
+    for line in lines:
+        lid = line.get('id')
+        if lid and (lid not in existing or lid in seen):
+            raise DomainError('Invalid or duplicate purchase order line', 'validation')
+        if lid:
+            seen.add(lid)
+        item = db.get(Item, line['item_id'])
+        if not item:
+            raise NotFound('Part')
+        qty, cost = Decimal(str(line['qty_ordered'])), Decimal(str(line['unit_cost']))
+        if not qty.is_finite() or not cost.is_finite() or qty <= 0 or cost < 0:
+            raise DomainError('Quantity must be positive and unit cost cannot be negative', 'validation')
+        if item.uom == 'pcs' and qty != qty.to_integral_value():
+            raise DomainError('Quantities in pcs must be whole numbers', 'validation')
+        if len(line.get('supplier_part_number') or '') > 100:
+            raise DomainError('Supplier part number must be at most 100 characters', 'validation')
+        mpid = line.get('manufacturer_part_id')
+        if mpid and not db.execute(select(AmlEntry.id).where(AmlEntry.item_id == item.id,
+                AmlEntry.manufacturer_part_id == mpid, AmlEntry.status == 'Approved')).first():
+            raise DomainError('Manufacturer part must be an approved source for this part', 'validation')
+    before = po_detail(db, pid)
+    # Renumber draft lines in a separate flush to avoid the (po_id, line_no) unique constraint.
+    for index, old in enumerate(existing.values(), 1):
+        old.line_no = -index
+    db.flush()
+    for lid, old in existing.items():
+        if lid not in seen:
+            db.delete(old)
+    for index, line in enumerate(lines, 1):
+        row = existing.get(line.get('id'))
+        if row is None:
+            row = PurchaseOrderLine(po_id=pid, qty_received=0)
+            db.add(row)
+        row.line_no = index
+        for field in ('item_id', 'manufacturer_part_id', 'supplier_part_number', 'qty_ordered', 'unit_cost'):
+            setattr(row, field, line.get(field))
+    po.supplier_id = supplier_id
+    po.currency, po.expected_date, po.notes = currency.upper(), expected_date, notes
+    po.revision += 1
+    db.flush()
+    audit.record(db, actor, 'modify', 'purchase_order', po.id, po.po_number,
+                 before=before, after=po_detail(db, pid), reason=reason.strip())
+
+def approve_po(db,actor,pid,password,comment=None,revision=None):
+    po=db.execute(select(PurchaseOrder).where(PurchaseOrder.id==pid).with_for_update()).scalar_one_or_none()
     if not po: raise NotFound('Purchase order')
     if po.status!='Draft': raise Conflict('Only Draft purchase orders can be approved')
+    if revision is not None and po.revision != revision: raise Conflict('This purchase order has changed. Reload it before approving.', 'stale_revision')
     sig=signatures.sign(db,actor,object_type='purchase_order',object_id=po.id,meaning='Purchase Order Approved',password=password,comment=comment,label=po.po_number,review_cycle=1,content_hash=po_hash(db,po.id)); old=po.status; po.status='Approved'; po.approved_by=actor.user_id; po.approved_at=func.clock_timestamp(); signatures.transition(db,actor,'purchase_order',po.id,old,po.status,comment,sig.id,po.po_number)
-def po_hash(db,pid):
-    po=db.get(PurchaseOrder,pid); lines=db.execute(select(PurchaseOrderLine).where(PurchaseOrderLine.po_id==pid).order_by(PurchaseOrderLine.line_no)).scalars().all(); return hashlib.sha256(canonical({'po':po.po_number,'supplier':str(po.supplier_id),'currency':po.currency,'lines':[{'item':str(x.item_id),'qty':str(x.qty_ordered),'cost':str(x.unit_cost)} for x in lines]}).encode()).hexdigest()
-def po_detail(db,pid):
-    po=db.get(PurchaseOrder,pid)
-    if not po: raise NotFound('Purchase order')
-    s=db.get(Supplier,po.supplier_id); lines=db.execute(select(PurchaseOrderLine).where(PurchaseOrderLine.po_id==pid).order_by(PurchaseOrderLine.line_no)).scalars().all(); return {'id':po.id,'po_number':po.po_number,'supplier':s.name,'supplier_id':s.id,'status':po.status,'currency':po.currency,'expected_date':po.expected_date,'lines':[{'id':x.id,'line_no':x.line_no,'item_id':x.item_id,'qty_ordered':x.qty_ordered,'qty_received':x.qty_received,'unit_cost':x.unit_cost} for x in lines]}
+def po_hash(db, pid):
+    po = db.get(PurchaseOrder, pid)
+    lines = db.execute(select(PurchaseOrderLine).where(PurchaseOrderLine.po_id == pid)
+                       .order_by(PurchaseOrderLine.line_no)).scalars().all()
+    return hashlib.sha256(canonical({
+        'po': po.po_number, 'supplier': po.supplier_id, 'currency': po.currency,
+        'revision': po.revision, 'expected_date': po.expected_date, 'notes': po.notes,
+        'lines': [{'line': x.line_no, 'item': x.item_id, 'manufacturer_part': x.manufacturer_part_id,
+                   'supplier_part_number': x.supplier_part_number, 'qty': x.qty_ordered, 'cost': x.unit_cost}
+                  for x in lines],
+    }).encode()).hexdigest()
+def po_detail(db, pid):
+    po = db.get(PurchaseOrder, pid)
+    if not po:
+        raise NotFound('Purchase order')
+    supplier = db.get(Supplier, po.supplier_id)
+    creator = db.get(User, po.created_by)
+    rows = db.execute(
+        select(PurchaseOrderLine, Item, ItemRevision, ManufacturerPart, Manufacturer)
+        .join(Item, Item.id == PurchaseOrderLine.item_id)
+        .outerjoin(ItemRevision, ItemRevision.id == Item.current_released_revision_id)
+        .outerjoin(ManufacturerPart, ManufacturerPart.id == PurchaseOrderLine.manufacturer_part_id)
+        .outerjoin(Manufacturer, Manufacturer.id == ManufacturerPart.manufacturer_id)
+        .where(PurchaseOrderLine.po_id == pid).order_by(PurchaseOrderLine.line_no)
+    ).all()
+    lines = [{
+        'id': line.id, 'line_no': line.line_no, 'item_id': line.item_id,
+        'part_number': item.part_number, 'description': rev.description if rev else None, 'uom': item.uom,
+        'manufacturer_part_id': line.manufacturer_part_id, 'manufacturer': maker.name if maker else None,
+        'mpn': mp.mpn if mp else None, 'supplier_part_number': line.supplier_part_number,
+        'qty_ordered': line.qty_ordered, 'qty_received': line.qty_received,
+        'qty_outstanding': line.qty_ordered - line.qty_received, 'unit_cost': line.unit_cost,
+        'line_total': line.qty_ordered * line.unit_cost,
+    } for line, item, rev, mp, maker in rows]
+    receipts = db.execute(
+        select(GoodsReceipt, GoodsReceiptLine, InventoryLot)
+        .join(GoodsReceiptLine, GoodsReceiptLine.receipt_id == GoodsReceipt.id)
+        .join(InventoryLot, InventoryLot.id == GoodsReceiptLine.lot_id)
+        .where(GoodsReceipt.po_id == pid).order_by(GoodsReceipt.received_at, InventoryLot.lot_no)
+    ).all()
+    return {
+        'id': po.id, 'po_number': po.po_number, 'supplier': supplier.name, 'supplier_id': supplier.id,
+        'supplier_code': supplier.code, 'status': po.status, 'currency': po.currency,
+        'revision': po.revision, 'expected_date': po.expected_date, 'notes': po.notes,
+        'created_at': po.created_at, 'created_by': creator.full_name if creator else None,
+        'approved_at': po.approved_at, 'lines': lines,
+        'total': sum((line['line_total'] for line in lines), Decimal(0)),
+        'signatures': signatures.list_for(db, 'purchase_order', po.id),
+        'receipts': [{'receipt_id': receipt.id, 'receipt_no': receipt.receipt_no,
+                      'received_at': receipt.received_at, 'po_line_id': line.po_line_id,
+                      'lot_id': lot.id, 'lot_no': lot.lot_no, 'qty': line.qty}
+                     for receipt, line, lot in receipts],
+    }
 def list_pos(db): return [po_detail(db,x.id) for x in db.execute(select(PurchaseOrder).order_by(PurchaseOrder.created_at.desc())).scalars()]
 def receive_po(db,actor,pid,location_id,lines,notes=None):
     po=db.execute(select(PurchaseOrder).where(PurchaseOrder.id==pid).with_for_update()).scalar_one_or_none()
@@ -64,9 +174,17 @@ def receive_po(db,actor,pid,location_id,lines,notes=None):
     for r in lines:
         pl=db.execute(select(PurchaseOrderLine).where(PurchaseOrderLine.id==r['po_line_id'],PurchaseOrderLine.po_id==po.id).with_for_update()).scalar_one_or_none()
         if not pl: raise DomainError('PO line not found','validation')
+        expected = r.get('expected_qty_received')
+        if expected is not None and Decimal(pl.qty_received) != Decimal(str(expected)):
+            raise Conflict('This PO line has already been received or changed. Refresh the order before receiving more.', 'receipt_changed')
+        received_mpn = r.get('manufacturer_part_id') or pl.manufacturer_part_id
+        if pl.manufacturer_part_id and received_mpn != pl.manufacturer_part_id:
+            raise Conflict('Received manufacturer part does not match the purchase order')
         qty=Decimal(str(r['qty']));
+        if qty <= 0:
+            raise DomainError('Receipt quantity must be positive', 'validation')
         if Decimal(pl.qty_received)+qty>Decimal(pl.qty_ordered): raise Conflict('Receipt exceeds ordered quantity')
-        lot=inventory.receive(db,actor,item_id=pl.item_id,qty=qty,location_id=location_id,manufacturer_part_id=pl.manufacturer_part_id,supplier_name=db.get(Supplier,po.supplier_id).name,supplier_part_number=pl.supplier_part_number,purchase_order_ref=po.po_number,supplier_lot=r.get('supplier_lot'),manufacturer_lot=r.get('manufacturer_lot'),date_code=r.get('date_code'),expiry_date=r.get('expiry_date'),notes=r.get('notes'))
+        lot=inventory.receive(db,actor,item_id=pl.item_id,qty=qty,location_id=location_id,manufacturer_part_id=received_mpn,supplier_name=db.get(Supplier,po.supplier_id).name,supplier_part_number=pl.supplier_part_number,purchase_order_ref=po.po_number,supplier_lot=r.get('supplier_lot'),manufacturer_lot=r.get('manufacturer_lot'),date_code=r.get('date_code'),expiry_date=r.get('expiry_date'),notes=r.get('notes'))
         pl.qty_received=Decimal(pl.qty_received)+qty; db.add(GoodsReceiptLine(receipt_id=rec.id,po_line_id=pl.id,lot_id=lot.id,qty=qty))
     all_lines=db.execute(select(PurchaseOrderLine).where(PurchaseOrderLine.po_id==po.id)).scalars().all(); old=po.status; po.status='Received' if all(Decimal(x.qty_received)>=Decimal(x.qty_ordered) for x in all_lines) else 'Partially Received'; signatures.transition(db,actor,'purchase_order',po.id,old,po.status,'Goods receipt',None,po.po_number); audit.record(db,actor,'receive','goods_receipt',rec.id,rec.receipt_no,after={'po':po.po_number}); return rec
 

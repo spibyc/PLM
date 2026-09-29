@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import DBAPIError
 
@@ -57,7 +58,7 @@ def create_app() -> FastAPI:
         for e in exc.errors():
             loc = ".".join(str(x) for x in e.get("loc", []) if x != "body")
             msgs.append(f"{loc}: {e.get('msg')}" if loc else str(e.get("msg")))
-        return JSONResponse({"detail": "; ".join(msgs), "code": "validation", "errors": exc.errors()},
+        return JSONResponse({"detail": "; ".join(msgs), "code": "validation", "errors": jsonable_encoder(exc.errors())},
                             status_code=422)
 
     @app.exception_handler(DBAPIError)

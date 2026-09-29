@@ -58,3 +58,7 @@ export const fmtQty = (n?: number | null) =>
 export interface Me {
   id: string; username: string; full_name: string; permissions: string[]; roles: string[]; csrf_token: string;
 }
+
+/** Consistent purchasing/receipt label; multiple approved MPNs stay visible. */
+export const partOptionLabel = (part: { part_number?: string; id?: string; item_id?: string; mpns?: string[]; mpn?: string | null; description?: string | null }) =>
+  `${part.part_number || part.item_id || part.id || ""} — ${part.mpns?.length ? part.mpns.join(" / ") : part.mpn || "No approved MPN"} — ${part.description || "No description"}`;

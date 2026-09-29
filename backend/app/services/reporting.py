@@ -42,9 +42,10 @@ def dashboard(db: Session) -> dict[str, Any]:
         "pending_approvals": pending + pending_aml,
         "lots_pending_inspection": lots_pending,
         "lots_quarantined": lots_q,
+        "below_min_stock": sum(1 for i in released_ids if stock[i]["available"] < float(mins.get(i) or 0)),
         "low_stock": low,
         "out_of_stock": out_of_stock,
-        "locations": db.execute(select(func.count()).select_from(Location).where(Location.is_active)).scalar_one(),
+        "locations": db.execute(select(func.count()).select_from(Location).where(Location.is_active, Location.system_key.is_(None))).scalar_one(),
         "recent_transactions": ledger(db, limit=8)["items"],
         "recent_changes": [{"item_id": str(r.item_id), "part_number": pn, "revision": r.revision_label,
                             "status": r.status, "description": r.description, "modified_at": r.modified_at}

@@ -7,7 +7,7 @@ import {
 } from "@tabler/icons-react";
 import { useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { useMantineColorScheme } from "@mantine/core";
+import { useMantineColorScheme, useComputedColorScheme } from "@mantine/core";
 import { useAuth } from "../lib/auth";
 import { branding, subtitle } from "../branding";
 
@@ -46,7 +46,8 @@ export function Layout({ children }: { children: ReactNode }) {
   const loc = useLocation();
   const nav = useNavigate();
   const [q, setQ] = useState("");
-  const { colorScheme, toggleColorScheme } = useMantineColorScheme();
+  const { toggleColorScheme } = useMantineColorScheme();
+  const colorScheme = useComputedColorScheme("light");
 
   const active = (to: string) => (to === "/" ? loc.pathname === "/" : loc.pathname.startsWith(to));
 

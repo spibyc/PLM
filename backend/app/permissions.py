@@ -14,6 +14,7 @@ PERMISSIONS: dict[str, str] = {
     "files:upload": "Upload files to Draft records and lots",
     "files:verify": "Run file integrity verification",
     "location:read": "View storage locations",
+    "location:delete": "Retire storage locations and move their stock to Unallocated",
     "location:write": "Create and edit storage locations",
     "inventory:read": "View lots, balances and transactions",
     "inventory:receive": "Receive stock into new lots",

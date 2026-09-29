@@ -32,6 +32,10 @@ class LocationEdit(BaseModel):
     reason: str = Field(min_length=3)
 
 
+class LocationRetire(BaseModel):
+    reason: str = Field(min_length=3)
+
+
 class ReceiveIn(BaseModel):
     item_id: uuid.UUID
     qty: Decimal = Field(gt=0)
@@ -55,6 +59,7 @@ class QtyIn(BaseModel):
 
 
 class TransferIn(BaseModel):
+    qty_reserved: Decimal = Decimal(0)
     from_location_id: uuid.UUID
     to_location_id: uuid.UUID
     qty: Decimal = Field(gt=0)
@@ -93,8 +98,8 @@ class InspectIn(SignedIn):
 # ---------------- locations ----------------
 
 @router.get("/locations")
-def list_locations(actor: Actor = Depends(require("location:read")), db: Session = Depends(get_db)) -> list[dict]:
-    return locations.list_locations(db)
+def list_locations(include_system: bool = False, actor: Actor = Depends(require("location:read")), db: Session = Depends(get_db)) -> list[dict]:
+    return locations.list_locations(db, include_system=include_system)
 
 
 @router.post("/locations")
@@ -120,6 +125,14 @@ def location(loc_id: uuid.UUID, actor: Actor = Depends(require("location:read"))
 def edit_location(loc_id: uuid.UUID, body: LocationEdit, actor: Actor = Depends(require("location:write")),
                   db: Session = Depends(get_db)) -> dict:
     locations.update_location(db, actor, loc_id, body.name, body.is_active, body.notes, body.reason)
+    db.commit()
+    return locations.location_detail(db, loc_id)
+
+
+@router.post("/locations/{loc_id}/retire")
+def retire_location(loc_id: uuid.UUID, body: LocationRetire,
+                    actor: Actor = Depends(require("location:delete")), db: Session = Depends(get_db)) -> dict:
+    locations.retire_location(db, actor, loc_id, body.reason)
     db.commit()
     return locations.location_detail(db, loc_id)
 
@@ -198,7 +211,8 @@ def unreserve(lot_id: uuid.UUID, body: QtyIn, actor: Actor = Depends(require("in
 @router.post("/lots/{lot_id}/transfer")
 def transfer(lot_id: uuid.UUID, body: TransferIn, actor: Actor = Depends(require("inventory:transact")),
              db: Session = Depends(get_db)) -> dict:
-    inventory.transfer(db, actor, lot_id, body.from_location_id, body.to_location_id, body.qty, body.comment)
+    inventory.transfer(db, actor, lot_id, body.from_location_id, body.to_location_id, body.qty, body.comment,
+                       qty_reserved=body.qty_reserved)
     return _done(db, lot_id)
 
 

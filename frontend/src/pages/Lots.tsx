@@ -114,7 +114,9 @@ export function LotDetail() {
           <dl className="kv">
             <dt>Manufacturer</dt><dd>{lot.manufacturer ?? "—"} {lot.mpn && <Ident>{lot.mpn}</Ident>}</dd>
             <dt>Supplier</dt><dd>{lot.supplier_name ?? "—"} {lot.supplier_part_number && `(${lot.supplier_part_number})`}</dd>
-            <dt>PO reference</dt><dd>{lot.purchase_order_ref ?? "—"}</dd>
+            <dt>PO reference</dt><dd>{lot.purchase_order_id && can("po:read")
+              ? <Anchor component={Link} to={`/purchase-orders/${lot.purchase_order_id}`}>{lot.purchase_order_ref}</Anchor>
+              : lot.purchase_order_ref ?? "—"}</dd>
             <dt>Supplier lot</dt><dd>{lot.supplier_lot ?? "—"}</dd>
             <dt>Manufacturer lot</dt><dd>{lot.manufacturer_lot ?? "—"}</dd>
             <dt>Date code</dt><dd>{lot.date_code ?? "—"}</dd>
@@ -130,7 +132,7 @@ export function LotDetail() {
               <Table.Tbody>
                 {lot.balances.map((b: any) => (
                   <LinkRow key={b.location_id} to={`/locations/${b.location_id}`}>
-                    <Table.Td><Ident>{b.location_code}</Ident>{b.is_quarantine && <Text span c="red.8" size="xs" fw={600}> quarantine</Text>}</Table.Td>
+                    <Table.Td><Ident>{b.location_code}</Ident>{b.is_quarantine && <Text span c="var(--plm-danger)" size="xs" fw={600}> quarantine</Text>}</Table.Td>
                     <Table.Td ta="right" className="ident">{fmtQty(b.qty_on_hand)}</Table.Td>
                     <Table.Td ta="right" className="ident">{fmtQty(b.qty_reserved)}</Table.Td>
                     <Table.Td ta="right" className="ident">{fmtQty(b.qty_available)}</Table.Td>
@@ -187,7 +189,7 @@ export function LedgerTable({ rows, showLot }: { rows: any[]; showLot?: boolean 
                 <Table.Td className="ident">{t.id}</Table.Td><Table.Td style={{ whiteSpace: "nowrap" }}>{fmtDate(t.occurred_at)}</Table.Td><Table.Td>{t.txn_type}</Table.Td>
                 {showLot && <><Table.Td><Anchor component={Link} to={`/lots/${t.lot_id}`}><Ident>{t.lot_no}</Ident></Anchor></Table.Td><Table.Td><Ident>{t.part_number}</Ident></Table.Td></>}
                 <Table.Td>{t.location ? <Ident>{t.location}</Ident> : <Text span c="dimmed">status</Text>}</Table.Td>
-                <Table.Td ta="right" className="ident" c={t.d_on_hand < 0 ? "red.8" : undefined}>{t.d_on_hand ? (t.d_on_hand > 0 ? "+" : "") + fmtQty(t.d_on_hand) : ""}</Table.Td>
+                <Table.Td ta="right" className="ident" c={t.d_on_hand < 0 ? "var(--plm-danger)" : undefined}>{t.d_on_hand ? (t.d_on_hand > 0 ? "+" : "") + fmtQty(t.d_on_hand) : ""}</Table.Td>
                 <Table.Td ta="right" className="ident">{fmtQty(t.on_hand_after)}</Table.Td>
                 <Table.Td ta="right" className="ident">{t.d_reserved ? (t.d_reserved > 0 ? "+" : "") + fmtQty(t.d_reserved) : ""}</Table.Td>
                 <Table.Td><Text size="sm">{[t.reference, t.reason, t.comment].filter(Boolean).join(" · ")}{t.corrects_txn_id && ` · corrects #${t.corrects_txn_id}`}</Text></Table.Td>
@@ -227,6 +229,8 @@ function OpDialog({ op, lot, onClose, onDone }: { op: Op | null; lot: any; onClo
       <Stack>
         {needsLoc && <Select label={op === "transfer" ? "From location" : "Location"} data={locData} value={f.location_id ?? null} onChange={(v) => setF({ ...f, location_id: v })} searchable required />}
         {op === "transfer" && <Select label="To location" data={all.filter((l: any) => l.value !== f.location_id)} value={f.to_location_id ?? null} onChange={(v) => setF({ ...f, to_location_id: v })} searchable required />}
+        {op === "transfer" && <NumberInput label="Reserved quantity included" description="Move existing reservations with the stock; included in the total quantity below."
+          value={f.qty_reserved ?? 0} onChange={(v) => setF({ ...f, qty_reserved: v || 0 })} min={0} />}
         {needsLoc && <NumberInput label={op === "adjust" ? `Change in quantity (${lot.uom}; negative to reduce)` : `Quantity (${lot.uom})`} value={f.qty ?? ""}
           onChange={(v) => setF({ ...f, qty: v })} allowNegative={op === "adjust"} required />}
         {refReq && <TextInput label="Reference" description="Build, work order or other reference" value={f.reference ?? ""} onChange={(e) => setF({ ...f, reference: e.currentTarget.value })} required />}

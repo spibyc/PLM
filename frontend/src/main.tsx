@@ -29,7 +29,13 @@ import Parts from "./pages/Parts";
 import { Receive, Transactions } from "./pages/Stores";
 import { Suppliers, PurchaseOrders, Boms, Builds } from "./pages/Traceability";
 import { theme } from "./theme";
+import { branding } from "./branding";
+
+const favicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+if (favicon) { favicon.href = branding.logoPath; favicon.removeAttribute("type"); }
+document.title = branding.productName;
 import Documents from "./pages/Documents";
+import PurchaseOrderDetail from "./pages/PurchaseOrderDetail";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: (n, e: any) => n < 1 && !(e?.status >= 400 && e?.status < 500), refetchOnWindowFocus: false } },
@@ -54,6 +60,7 @@ function App() {
         <Route path="/transactions" element={<Transactions />} />
         <Route path="/suppliers" element={<Suppliers />} />
         <Route path="/purchase-orders" element={<PurchaseOrders />} />
+        <Route path="/purchase-orders/:id" element={<PurchaseOrderDetail />} />
         <Route path="/boms" element={<Boms />} />
         <Route path="/documents" element={<Documents />} />
         <Route path="/builds" element={<Builds />} />

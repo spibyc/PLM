@@ -51,7 +51,7 @@ export default function Parts() {
                     <Table.Td>{i.value}</Table.Td><Table.Td>{i.package}</Table.Td>
                     <Table.Td>{i.released_revision ? <Group gap={6} wrap="nowrap"><Text size="sm">{i.released_revision}</Text><StatusBadge status={i.released_status} /></Group> : <Text size="sm" c="dimmed">none</Text>}</Table.Td>
                     <Table.Td><Group gap={6} wrap="nowrap"><Text size="sm">{i.latest_revision}</Text>{i.latest_revision !== i.released_revision && <StatusBadge status={i.latest_status} />}</Group></Table.Td>
-                    <Table.Td ta="right" className="ident" c={i.min_stock > 0 && i.available < i.min_stock ? "red.8" : undefined}>{fmtQty(i.available)}</Table.Td>
+                    <Table.Td ta="right" className="ident" c={i.min_stock > 0 && i.available < i.min_stock ? "var(--plm-danger)" : undefined}>{fmtQty(i.available)}</Table.Td>
                     <Table.Td ta="right" className="ident">{fmtQty(i.on_hand)}</Table.Td>
                   </LinkRow>
                 ))}

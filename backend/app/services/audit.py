@@ -59,6 +59,11 @@ def compute_hash(prev_hash: str, e: AuditEvent) -> str:
     return hashlib.sha256((prev_hash + canonical(_payload(e))).encode()).hexdigest()
 
 
+def try_lock_chain(db: Session) -> bool:
+    """Reserve the audit chain without waiting during multi-record inventory retirement."""
+    return bool(db.execute(text("SELECT pg_try_advisory_xact_lock(:k)"), {"k": _CHAIN_LOCK}).scalar_one())
+
+
 def record(
     db: Session,
     actor: Actor,

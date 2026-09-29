@@ -1,6 +1,6 @@
-import { createTheme, type MantineColorsTuple } from "@mantine/core";
+import { createTheme, defaultVariantColorsResolver, parseThemeColor, type MantineColorsTuple } from "@mantine/core";
 
-// the organisation primary blue-gray (#9AAEB5), derived from the official the organisation press-kit palette.
+// Neutral blue-gray application palette.
 const mask: MantineColorsTuple = [
   "#f2f6f7", "#e2eaec", "#c7d5d9", "#a9c0c6", "#88aab2", "#668f99", "#566877",
   "#3f5662", "#31454F", "#192D40",
@@ -8,7 +8,18 @@ const mask: MantineColorsTuple = [
 
 export const theme = createTheme({
   primaryColor: "mask",
-  primaryShade: 8,
+  primaryShade: { light: 8, dark: 4 },
+  autoContrast: true,
+  // Mantine 7's default resolver calculates filled text contrast using the light shade.
+  // Resolve both schemes so a lighter dark-mode button also gets readable text.
+  variantColorResolver: (input) => {
+    const result = defaultVariantColorsResolver(input);
+    if (input.variant !== "filled" || input.autoContrast === false) return result;
+    const text = (colorScheme: "light" | "dark") =>
+      parseThemeColor({ color: input.color, theme: input.theme, colorScheme }).isLight
+        ? "var(--mantine-color-black)" : "var(--mantine-color-white)";
+    return { ...result, color: `light-dark(${text("light")}, ${text("dark")})` };
+  },
   colors: { mask },
   fontFamily: "'IBM Plex Sans', system-ui, sans-serif",
   fontFamilyMonospace: "'IBM Plex Mono', ui-monospace, monospace",

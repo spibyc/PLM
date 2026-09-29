@@ -1,4 +1,4 @@
-import { ActionIcon, Button, Group, Paper, PasswordInput, Stack, Text, TextInput, Title, useMantineColorScheme } from "@mantine/core";
+import { ActionIcon, Button, Group, Paper, PasswordInput, Stack, Text, TextInput, Title, useMantineColorScheme, useComputedColorScheme } from "@mantine/core";
 import { IconMoon, IconSun } from "@tabler/icons-react";
 import { useState } from "react";
 import { branding, subtitle } from "../branding";
@@ -7,7 +7,8 @@ import { useAuth } from "../lib/auth";
 
 export default function Login() {
   const { login } = useAuth();
-  const { colorScheme, toggleColorScheme } = useMantineColorScheme();
+  const { toggleColorScheme } = useMantineColorScheme();
+  const colorScheme = useComputedColorScheme("light");
   const [u, setU] = useState("");
   const [p, setP] = useState("");
   const [err, setErr] = useState<unknown>(null);
