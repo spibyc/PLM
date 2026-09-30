@@ -5,6 +5,7 @@ import re
 import tempfile
 import unicodedata
 import uuid
+import zipfile
 from pathlib import Path
 from typing import BinaryIO
 
@@ -19,6 +20,7 @@ from app.services import audit
 
 # extension -> acceptable detected MIME prefixes
 ALLOWED: dict[str, tuple[str, ...]] = {
+    ".zip": ("application/zip", "application/x-zip"),
     ".pdf": ("application/pdf",),
     ".png": ("image/png",),
     ".jpg": ("image/jpeg",), ".jpeg": ("image/jpeg",),
@@ -33,7 +35,7 @@ ALLOWED: dict[str, tuple[str, ...]] = {
     ".odt": ("application/vnd.oasis.opendocument", "application/zip"),
     ".ods": ("application/vnd.oasis.opendocument", "application/zip"),
 }
-DOC_KINDS = ("datasheet", "kicad_symbol", "kicad_footprint", "model_3d", "drawing", "simulation_model",
+DOC_KINDS = ("gerbers", "kicad_project", "datasheet", "kicad_symbol", "kicad_footprint", "model_3d", "drawing", "simulation_model",
              "application_note", "qualification", "compliance_declaration", "certificate",
              "certificate_of_conformance", "inspection_record", "other")
 
@@ -100,6 +102,8 @@ def store(db: Session, actor: Actor, stream: BinaryIO, filename: str) -> tuple[F
         mime = detect_mime(tmp)
         if not any(mime.startswith(p) for p in ALLOWED[ext]):
             raise DomainError(f"File content ({mime}) does not match extension {ext}", "mime_mismatch")
+        if ext == ".zip" and not zipfile.is_zipfile(tmp):
+            raise DomainError("File is not a valid ZIP archive", "bad_archive")
         sha = h.hexdigest()
         fo = db.execute(select(FileObject).where(FileObject.sha256 == sha)).scalar_one_or_none()
         if fo is None:

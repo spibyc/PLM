@@ -173,6 +173,22 @@ def sign(item_id: uuid.UUID, rev_id: uuid.UUID, body: SignIn, actor: Actor = Dep
     return items.item_detail(db, item_id)
 
 
+@router.delete("/{item_id}/revisions/{rev_id}")
+def delete_discarded_revision(item_id: uuid.UUID, rev_id: uuid.UUID, body: ReasonIn,
+                              actor: Actor = Depends(require("admin:override")),
+                              db: Session = Depends(get_db)) -> dict:
+    from sqlalchemy.exc import IntegrityError
+    from app.core.errors import Conflict
+
+    try:
+        items.admin_delete_discarded_revision(db, actor, item_id, rev_id, body.reason)
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise Conflict("This revision is referenced by another record and cannot be deleted") from exc
+    return items.item_detail(db, item_id)
+
+
 @router.post("/{item_id}/revisions/{rev_id}/discard")
 def discard(item_id: uuid.UUID, rev_id: uuid.UUID, body: ReasonIn, actor: Actor = Depends(require("item:write")),
             db: Session = Depends(get_db)) -> dict:

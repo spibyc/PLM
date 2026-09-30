@@ -288,6 +288,36 @@ def new_revision(db: Session, actor: Actor, item_id: uuid.UUID, change_reason: s
     return rev
 
 
+def admin_delete_discarded_revision(db: Session, actor: Actor, item_id: uuid.UUID,
+                                    rev_id: uuid.UUID, reason: str) -> None:
+    if not actor.has("admin:override"):
+        raise Forbidden("Administrator superuser permission required")
+    reason = reason.strip()
+    if len(reason) < 3:
+        raise DomainError("A reason is required for permanent deletion", "validation")
+    item = _get_item(db, item_id, lock=True)
+    rev = _get_rev(db, item, rev_id)
+    if rev.status != "Discarded":
+        raise Conflict("Only discarded revisions can be deleted")
+    if item.current_released_revision_id == rev.id:
+        raise Conflict("The current released revision cannot be deleted")
+    if db.scalar(select(func.count()).select_from(ItemRevision).where(ItemRevision.item_id == item.id)) <= 1:
+        raise Conflict("The part must retain at least one revision")
+    if db.scalar(select(InventoryLot.id).where(InventoryLot.item_revision_id == rev.id).limit(1)) or \
+            db.scalar(select(ItemRevision.id).where(ItemRevision.supersedes_id == rev.id).limit(1)):
+        raise Conflict("This revision is referenced by inventory or another revision and cannot be deleted")
+    # Keep file links, signatures, transitions and prior audit events as historical evidence.
+    before = {"revision_id": str(rev.id), "revision_label": rev.revision_label, "status": rev.status,
+              "content_hash": rev.content_hash, **{f: getattr(rev, f) for f in CONTENT_FIELDS}}
+    audit.record(db, actor, "admin_delete_discarded_revision", "item", item.id, item.part_number,
+                 before=before, reason=reason)
+    audit.record(db, actor, "admin_delete_discarded_revision", "item_revision", rev.id, _label(item, rev),
+                 before=before, reason=reason)
+    db.execute(text("SET LOCAL qplm.admin_override = 'on'"))
+    db.delete(rev)
+    db.flush()
+
+
 def discard(db: Session, actor: Actor, item_id: uuid.UUID, rev_id: uuid.UUID, reason: str) -> None:
     item = _get_item(db, item_id)
     rev = _get_rev(db, item, rev_id)

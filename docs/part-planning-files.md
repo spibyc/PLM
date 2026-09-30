@@ -17,3 +17,10 @@ The separate out-of-stock metric remains independent of minimum stock.
 
 Rebuild and deploy API and gateway together. No new database migration is required
 for these changes.
+
+## PCB manufacturing and project files
+
+Upload a `.zip` bundle through **Files → Part files** and choose `gerbers` or
+`kicad_project` as the Kind. Archives are stored intact without extraction, with
+the normal upload size limit and SHA-256 verification. Draft revision files also
+accept ZIP bundles when the archive should belong to a controlled revision.

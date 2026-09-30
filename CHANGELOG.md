@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added ZIP attachments for PCB Gerber bundles and KiCad projects, with gerbers and kicad_project file kinds. Archives are stored intact and downloaded unchanged.
+
+- Superusers can delete an unreferenced discarded revision with a reason and confirmation. Audit history remains intact; deletion of the last revision is blocked.
+
 - Part details now allow audited minimum-stock changes without a new revision. The Files tab supports shared part attachments at any lifecycle state while preserving signed revision files.
 - The dashboard counts only parts whose available stock is strictly below their minimum; zero stock with a zero minimum is excluded.
 

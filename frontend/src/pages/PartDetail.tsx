@@ -78,6 +78,12 @@ export default function PartDetail() {
             <Button variant="default" onClick={() => setSigning(true)}>Change lifecycle…</Button>}
           {can("item:write") && !hasOpen && item.current_released_revision_id &&
             <Button variant="default" onClick={() => setNewRev(true)}>New revision</Button>}
+          {can("admin:override") && rev.status === "Discarded" && <Button color="red" variant="outline" onClick={async () => {
+            const reason = window.prompt(`Delete discarded revision ${rev.revision_label} of ${item.part_number}?\n\nAudit history will be retained. Enter the reason:`);
+            if (!reason || reason.trim().length < 3) return;
+            if (!window.confirm(`Permanently delete only revision ${rev.revision_label}? This cannot be undone. Audit history will remain.`)) return;
+            await act(() => api(base, { method: "DELETE", body: { reason: reason.trim() } }), "Discarded revision deleted; audit history retained");
+          }}>Delete discarded revision</Button>}
           {can("admin:override") && <Button variant="default" onClick={() => setAdminEditing(true)}>Superuser edit</Button>}
           {can("admin:override") && <Button color="red" variant="outline" onClick={async () => {
             const reason = window.prompt(`PERMANENTLY DELETE ${item.part_number}?\n\nThis cannot be undone. Enter the reason:`);
