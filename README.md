@@ -150,6 +150,21 @@ Set `PUBLIC_BASE_URL` before printing QR labels because generated links use this
 
 For production use, terminate TLS/HTTPS correctly and set `COOKIE_SECURE=true`; see `docs/deployment.md`.
 
+## Public viewer access
+
+Anyone who can reach PLM can browse parts (including revisions and attached files), lots,
+locations and their stock contents, and stock transactions without signing in. QR labels
+open these read-only pages directly. The account menu shows **Public viewer · read only**;
+choose **Sign in to edit** for staff access. Public viewers cannot change records, upload,
+inspect, approve, or access the dashboard, audit trail, user administration, purchasing,
+production, or controlled document register. Signing out returns to public viewing.
+
+After deploying this change, rebuild both application services:
+
+```bash
+sudo docker compose up -d --build
+```
+
 ## Data persistence
 
 Application data is **not stored in the Git repository**. Docker volumes hold the PostgreSQL database and controlled filestore. The `branding/` directory contains only deployment branding.

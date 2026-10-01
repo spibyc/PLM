@@ -13,7 +13,7 @@ import { Notifications } from "@mantine/notifications";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Route, Routes, Navigate, useLocation } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import { Loading } from "./components/ui";
 import { AuthProvider, useAuth } from "./lib/auth";
@@ -43,12 +43,17 @@ const queryClient = new QueryClient({
 
 function App() {
   const { me, loading } = useAuth();
+  const location = useLocation();
   if (loading) return <Loading />;
-  if (!me) return <Login />;
+  if (!me || (me.anonymous && location.pathname === "/login")) return <Login />;
+  if (me.anonymous && !/^\/(?:$|parts(?:\/|$)|lots(?:\/|$)|locations(?:\/|$)|labels$|transactions$|search$|scan\/|about$)/.test(location.pathname)) {
+    return <Navigate to="/parts" replace />;
+  }
   return (
     <Layout>
       <Routes>
-        <Route path="/" element={<Dashboard />} />
+        <Route path="/" element={me.anonymous ? <Parts /> : <Dashboard />} />
+        <Route path="/login" element={<Navigate to="/" replace />} />
         <Route path="/parts" element={<Parts />} />
         <Route path="/parts/:id" element={<PartDetail />} />
         <Route path="/lots" element={<Lots />} />

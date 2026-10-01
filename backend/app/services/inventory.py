@@ -373,6 +373,7 @@ def list_lots(db: Session, q: str | None, status: str | None, item_id: uuid.UUID
     if q:
         like = f"%{q}%"
         base = base.where(or_(InventoryLot.lot_no.ilike(like), Item.part_number.ilike(like),
+                              ItemRevision.description.ilike(like),
                               InventoryLot.supplier_lot.ilike(like), InventoryLot.manufacturer_lot.ilike(like),
                               InventoryLot.date_code.ilike(like), ManufacturerPart.mpn.ilike(like)))
     if status:

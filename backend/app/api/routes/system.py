@@ -44,6 +44,10 @@ def version(db: Session = Depends(get_db)) -> dict:
 
 @router.get("/dashboard")
 def dashboard(actor: Actor = Depends(require("item:read")), db: Session = Depends(get_db)) -> dict:
+    if actor.user_id is None:
+        from app.core.errors import Forbidden
+
+        raise Forbidden("Sign in to view the dashboard")
     return reporting.dashboard(db)
 
 
@@ -90,7 +94,8 @@ def qr_item(item_id: uuid.UUID, actor: Actor = Depends(require("item:read"))) ->
 @router.get("/files/{attachment_id}/download")
 def download(attachment_id: uuid.UUID, actor: Actor = Depends(current_actor), db: Session = Depends(get_db)) -> FileResponse:
     a, fo, path = files.open_attachment(db, actor, attachment_id)
-    needed = "item:read" if a.object_type == "item_revision" else "inventory:read"
+    needed = {"item": "item:read", "item_revision": "item:read",
+              "inventory_lot": "inventory:read", "document_revision": "document:read"}.get(a.object_type)
     if not actor.has(needed):
         from app.core.errors import Forbidden
 

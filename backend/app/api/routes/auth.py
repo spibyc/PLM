@@ -40,7 +40,11 @@ class PasswordChangeIn(BaseModel):
 
 
 def _me(db: Session, actor: Actor, csrf: str) -> dict:
-    return {"id": str(actor.user_id), "username": actor.username, "full_name": actor.full_name,
+    if actor.user_id is None:
+        return {"id": None, "username": actor.username, "full_name": actor.full_name,
+                "permissions": sorted(actor.permissions), "roles": ["PUBLIC_VIEWER"],
+                "csrf_token": "", "anonymous": True}
+    return {"anonymous": False, "id": str(actor.user_id), "username": actor.username, "full_name": actor.full_name,
             "permissions": sorted(actor.permissions), "roles": auth.roles_for(db, actor.user_id),  # type: ignore[arg-type]
             "csrf_token": csrf}
 
@@ -68,7 +72,7 @@ def logout(response: Response, actor: Actor = Depends(current_actor), db: Sessio
 
 @router.get("/me")
 def me(actor: Actor = Depends(current_actor), db: Session = Depends(get_db)) -> dict:
-    sess = db.get(UserSession, actor.session_id)
+    sess = db.get(UserSession, actor.session_id) if actor.session_id else None
     return _me(db, actor, sess.csrf_token if sess else "")
 
 

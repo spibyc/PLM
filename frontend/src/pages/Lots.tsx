@@ -32,7 +32,7 @@ export default function Lots() {
     <>
       <PageHeader title="Lots" sub="Every received lot, where it is, and whether it can be used" />
       <Group mb="sm">
-        <TextInput placeholder="Lot, part number, MPN, supplier lot, date code" value={q} onChange={(e) => { setQ(e.currentTarget.value); setPage(1); }} w={380} />
+        <TextInput placeholder="Lot, part number, description, MPN, supplier lot, date code" value={q} onChange={(e) => { setQ(e.currentTarget.value); setPage(1); }} w={380} />
         <Select placeholder="Any status" data={["Pending Inspection", "Available", "Quarantined"]} value={status} clearable w={200}
           onChange={(v) => { setPage(1); setSp(v ? { status: v } : {}); }} />
         <Select w={200} value={includeEmpty ? "all" : "stock"} onChange={(v) => setIncludeEmpty(v === "all")} allowDeselect={false}
@@ -43,14 +43,15 @@ export default function Lots() {
         <Paper withBorder radius="sm">
           <Table.ScrollContainer minWidth={1000}>
             <Table striped>
-              <Table.Thead><Table.Tr><Table.Th>Lot</Table.Th><Table.Th>Part</Table.Th><Table.Th>Rev</Table.Th><Table.Th>Status</Table.Th><Table.Th>Manufacturer / MPN</Table.Th><Table.Th>Date code</Table.Th><Table.Th ta="right">On hand</Table.Th><Table.Th ta="right">Reserved</Table.Th><Table.Th>Expiry</Table.Th><Table.Th>Received</Table.Th></Table.Tr></Table.Thead>
+              <Table.Thead><Table.Tr><Table.Th>Lot</Table.Th><Table.Th>Part</Table.Th><Table.Th>Manufacturer / MPN</Table.Th><Table.Th>Rev</Table.Th><Table.Th>Status</Table.Th><Table.Th>Date code</Table.Th><Table.Th ta="right">On hand</Table.Th><Table.Th ta="right">Reserved</Table.Th><Table.Th>Expiry</Table.Th><Table.Th>Received</Table.Th></Table.Tr></Table.Thead>
               <Table.Tbody>
                 {data.items.map((l: any) => (
                   <LinkRow key={l.id} to={`/lots/${l.id}`}>
                     <Table.Td><Ident>{l.lot_no}</Ident></Table.Td>
                     <Table.Td><Ident>{l.part_number}</Ident><Text size="xs" c="dimmed" lineClamp={1}>{l.description}</Text></Table.Td>
+                    <Table.Td>{l.manufacturer} <Ident>{l.mpn}</Ident></Table.Td>
                     <Table.Td>{l.revision}</Table.Td><Table.Td><StatusBadge status={l.status} /></Table.Td>
-                    <Table.Td>{l.manufacturer} <Ident>{l.mpn}</Ident></Table.Td><Table.Td>{l.date_code}</Table.Td>
+                    <Table.Td>{l.date_code}</Table.Td>
                     <Table.Td ta="right" className="ident">{fmtQty(l.qty_on_hand)} {l.uom}</Table.Td>
                     <Table.Td ta="right" className="ident">{l.qty_reserved ? fmtQty(l.qty_reserved) : ""}</Table.Td>
                     <Table.Td>{fmtDay(l.expiry_date)}</Table.Td><Table.Td>{fmtDay(l.received_at)}</Table.Td>
@@ -93,7 +94,7 @@ export function LotDetail() {
           <Button variant="default" leftSection={<IconPrinter size={16} />} onClick={() => nav(`/labels?lots=${lot.id}`)}>Label</Button>
           {lot.status === "Pending Inspection" && inspectMeanings.length > 0 && <Button onClick={() => setSign("inspect")}>Record inspection…</Button>}
           {lot.status === "Quarantined" && releaseMeanings.length > 0 && <Button onClick={() => setSign("release")}>Release from quarantine…</Button>}
-          <Menu position="bottom-end">
+          {(can("inventory:transact") || can("inventory:adjust") || can("inventory:quarantine")) && <Menu position="bottom-end">
             <Menu.Target><Button variant="default" rightSection={<IconChevronDown size={14} />}>Stock action</Button></Menu.Target>
             <Menu.Dropdown>
               {can("inventory:transact") && (["issue", "return", "reserve", "release-reservation", "transfer"] as Op[]).map((o) =>
@@ -102,7 +103,7 @@ export function LotDetail() {
               {can("inventory:quarantine") && lot.status !== "Quarantined" && <><Menu.Divider /><Menu.Item color="red" onClick={() => setOp("quarantine")}>{OP_TITLES.quarantine}</Menu.Item></>}
               {!can("inventory:transact") && !can("inventory:adjust") && !can("inventory:quarantine") && <Menu.Item disabled>No stock permissions</Menu.Item>}
             </Menu.Dropdown>
-          </Menu>
+          </Menu>}
         </>} />
       {lot.usability_problems.length > 0 && (
         <Alert color="red" variant="light" icon={<IconAlertTriangle size={18} />} mb="md" title="Not usable for production">
@@ -148,7 +149,7 @@ export function LotDetail() {
           <Tabs.Tab value="ledger">Ledger ({lot.transactions.length})</Tabs.Tab>
           <Tabs.Tab value="records">Certificates & records ({lot.attachments.length})</Tabs.Tab>
           <Tabs.Tab value="signatures">Signatures ({lot.signatures.length})</Tabs.Tab>
-          <Tabs.Tab value="history">History</Tabs.Tab>
+          {can("audit:read") && <Tabs.Tab value="history">History</Tabs.Tab>}
         </Tabs.List>
         <Tabs.Panel value="ledger"><LedgerTable rows={lot.transactions} /></Tabs.Panel>
         <Tabs.Panel value="records"><LotFiles lot={lot} onChanged={refresh} /></Tabs.Panel>

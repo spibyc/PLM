@@ -1,6 +1,7 @@
 import { ActionIcon, Button, Group, Paper, PasswordInput, Stack, Text, TextInput, Title, useMantineColorScheme, useComputedColorScheme } from "@mantine/core";
 import { IconMoon, IconSun } from "@tabler/icons-react";
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { branding, subtitle } from "../branding";
 import { ErrorBox } from "../components/ui";
 import { useAuth } from "../lib/auth";
@@ -74,6 +75,7 @@ export default function Login() {
             <ErrorBox error={err} />
 
             <Button type="submit" loading={busy}>Sign in</Button>
+            <Button component={Link} to="/" variant="subtle">Continue as public viewer</Button>
 
             <Text size="xs" c="dimmed">
               All activity is recorded in the audit trail.

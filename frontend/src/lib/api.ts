@@ -56,7 +56,7 @@ export const fmtQty = (n?: number | null) =>
   n === undefined || n === null ? "" : Number(n).toLocaleString(undefined, { maximumFractionDigits: 6 });
 
 export interface Me {
-  id: string; username: string; full_name: string; permissions: string[]; roles: string[]; csrf_token: string;
+  anonymous: boolean; id: string | null; username: string; full_name: string; permissions: string[]; roles: string[]; csrf_token: string;
 }
 
 /** Consistent purchasing/receipt label; multiple approved MPNs stay visible. */

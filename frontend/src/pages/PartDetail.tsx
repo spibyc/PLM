@@ -134,7 +134,7 @@ export default function PartDetail() {
           <Tabs.Tab value="approvals">Approvals ({rev.signatures.length})</Tabs.Tab>
           <Tabs.Tab value="sources">Manufacturer sources ({item.aml.length})</Tabs.Tab>
           <Tabs.Tab value="stock">Stock</Tabs.Tab>
-          <Tabs.Tab value="history">History</Tabs.Tab>
+          {can("audit:read") && <Tabs.Tab value="history">History</Tabs.Tab>}
         </Tabs.List>
         <Tabs.Panel value="details">
           {rev.status === "Draft" && can("item:write")

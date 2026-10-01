@@ -94,11 +94,16 @@ export function Layout({ children }: { children: ReactNode }) {
               </UnstyledButton>
             </Menu.Target>
             <Menu.Dropdown>
+              {me?.anonymous ? <>
+                <Menu.Label>Public viewer · read only</Menu.Label>
+                <Menu.Item component={Link} to="/login">Sign in to edit</Menu.Item>
+              </> : <>
               <Menu.Label>Signed in as {me?.username}</Menu.Label>
               <Menu.Item disabled>Roles: {me?.roles.join(", ") || "none"}</Menu.Item>
               <Menu.Item component={Link} to="/account">Change password</Menu.Item>
               <Menu.Divider />
               <Menu.Item color="red" onClick={() => logout()}>Sign out</Menu.Item>
+              </>}
             </Menu.Dropdown>
           </Menu>
         </Group>
@@ -116,7 +121,7 @@ export function Layout({ children }: { children: ReactNode }) {
                     <NavLink key={i.label} label={i.label} leftSection={i.icon} disabled
                       rightSection={<Badge size="xs" variant="outline" color="gray" tt="none">Planned</Badge>} />
                   ) : (
-                    <NavLink key={i.label} label={i.label} leftSection={i.icon} component={Link} to={i.to!}
+                    <NavLink key={i.label} label={me?.anonymous && i.to === "/" ? "Browse parts" : i.label} leftSection={i.icon} component={Link} to={i.to!}
                       active={active(i.to!)} onClick={close} />
                   ),
                 )}

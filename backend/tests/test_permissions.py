@@ -58,6 +58,6 @@ def test_role_change_is_audited_and_revokes_sessions(app, clients):
     uid = next(u["id"] for u in users if u["username"] == name)
     r = clients["admin"].put(f"/api/users/{uid}/roles", json={"roles": ["PRODUCTION"]})
     assert r.status_code == 200 and r.json()["roles"] == ["PRODUCTION"]
-    assert victim.get("/api/auth/me").status_code == 401  # session revoked on privilege change
+    assert victim.get("/api/auth/me").json()["anonymous"] is True  # revoked session becomes a public viewer
     ev = clients["qa"].get("/api/audit", params={"action": "permission_change", "entity_id": uid}).json()
     assert ev["items"][0]["after"] == {"roles": ["PRODUCTION"]}

@@ -20,6 +20,11 @@ def client_ip(request: Request) -> str | None:
 def current_actor(request: Request, db: Session = Depends(get_db)) -> Actor:
     token = request.cookies.get(SESSION_COOKIE)
     resolved = auth.resolve_session(db, token) if token else None
+    if resolved is None and request.method in {"GET", "HEAD"}:
+        # Anonymous visitors have an explicit, narrow read-only permission set.
+        return Actor(user_id=None, username="viewer", full_name="Public viewer",
+                     permissions=frozenset({"item:read", "inventory:read", "location:read"}),
+                     ip=client_ip(request), user_agent=request.headers.get("user-agent"))
     if resolved is None:
         raise DomainError("Not authenticated or session expired", "unauthenticated", 401)
     sess, user = resolved

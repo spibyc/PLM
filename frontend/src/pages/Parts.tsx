@@ -39,7 +39,7 @@ export default function Parts() {
             <Table striped highlightOnHover>
               <Table.Thead>
                 <Table.Tr>
-                  <Table.Th>Part number</Table.Th><Table.Th>Description</Table.Th><Table.Th>Value</Table.Th><Table.Th>Package</Table.Th>
+                  <Table.Th>Part number</Table.Th><Table.Th>MPN</Table.Th><Table.Th>Description</Table.Th><Table.Th>Value</Table.Th><Table.Th>Package</Table.Th>
                   <Table.Th>Released</Table.Th><Table.Th>Latest</Table.Th><Table.Th ta="right">Available</Table.Th><Table.Th ta="right">On hand</Table.Th>
                 </Table.Tr>
               </Table.Thead>
@@ -47,6 +47,7 @@ export default function Parts() {
                 {data.items.map((i: any) => (
                   <LinkRow key={i.id} to={`/parts/${i.id}`}>
                     <Table.Td><Ident>{i.part_number}</Ident></Table.Td>
+                    <Table.Td>{i.mpns?.length ? i.mpns.map((mpn: string) => <div key={mpn}><Ident>{mpn}</Ident></div>) : <Text size="sm" c="dimmed">—</Text>}</Table.Td>
                     <Table.Td><Text size="sm" lineClamp={1}>{i.description}</Text></Table.Td>
                     <Table.Td>{i.value}</Table.Td><Table.Td>{i.package}</Table.Td>
                     <Table.Td>{i.released_revision ? <Group gap={6} wrap="nowrap"><Text size="sm">{i.released_revision}</Text><StatusBadge status={i.released_status} /></Group> : <Text size="sm" c="dimmed">none</Text>}</Table.Td>
